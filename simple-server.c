@@ -32,14 +32,14 @@ conn_stream_pair_node_t mmap_head;
 
 static quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn,
-                                    int err, uint64_t frame_type, const char *reason, size_t reason_len);
+                                    quicly_error_t err, uint64_t frame_type, const char *reason, size_t reason_len);
 
 
 static quicly_stream_open_t on_stream_open = {server_on_stream_open};
 static quicly_closed_by_remote_t closed_by_remote = {server_on_conn_close};
 
 
-static void server_on_stop_sending(quicly_stream_t *stream, int err)
+static void server_on_stop_sending(quicly_stream_t *stream, quicly_error_t err)
 {
     log_debug("stream: %ld received STOP_SENDING: %lu \n", stream->stream_id, QUICLY_ERROR_GET_ERROR_CODE(err));
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
@@ -47,7 +47,7 @@ static void server_on_stop_sending(quicly_stream_t *stream, int err)
 
 static void ctrl_stream_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 { 
-    log_debug("stream: %d received control message.\n", stream->stream_id);
+    log_debug("stream: %ld received control message.\n", stream->stream_id);
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
@@ -59,7 +59,7 @@ static void ctrl_stream_on_receive(quicly_stream_t *stream, size_t off, const vo
         return;
     } 
 
-    log_debug("QUIC stream [%d], bytes_received: %zu\n", stream->stream_id, input.len);
+    log_debug("QUIC stream [%ld], bytes_received: %zu\n", stream->stream_id, input.len);
     log_debug("msg:\"%.*s\"\n", (int)input.len, (char *)input.base);
 
     /* remove used bytes from receive buffer */
@@ -107,7 +107,7 @@ void *handle_isp_server(void *data)
                 if (quicly_recvstate_transfer_complete(&quic_stream->recvstate))
                      quicly_streambuf_egress_shutdown(quic_stream);
                 
-                log_debug("[tcp: %d -> stream: %ld] write %d bytes to quic stream: %d.\n", 
+                log_debug("[tcp: %d -> stream: %ld] write %d bytes to quic stream: %ld.\n", 
                         tcp_fd, quic_stream->stream_id, bytes_received, quic_stream->stream_id);
             } else { 
                 log_debug("[tcp: %d -> stream: %ld] quic stream is closed or no data to write.\n", 
@@ -210,20 +210,20 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
             return;
         }
         log_debug("[stream: %ld -> tcp: %d], bytes: %zu sent\n", stream->stream_id, tcp_fd, bytes_sent);
-        log_debug("[stream: %ld -> tcp: %d], msg: %.*s sent\n", stream->stream_id, tcp_fd, bytes_sent, (char *) buff_base);
+        log_debug("[stream: %ld -> tcp: %d], msg: %.*s sent\n", stream->stream_id, tcp_fd, (int) bytes_sent, (char *) buff_base);
     }
 
     return;
 }
 
 
-static void server_on_receive_reset(quicly_stream_t *stream, int err)
+static void server_on_receive_reset(quicly_stream_t *stream, quicly_error_t err)
 {
     log_debug("stream: %ld received RESET_STREAM: %lu \n", stream->stream_id, QUICLY_ERROR_GET_ERROR_CODE(err));
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 }
 
-static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, int err,
+static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
     uint64_t frame_type, const char *reason, size_t reason_len)
 {
     if (QUICLY_ERROR_IS_QUIC_TRANSPORT(err)) {
@@ -235,7 +235,7 @@ static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t 
     } else if (err == QUICLY_ERROR_RECEIVED_STATELESS_RESET) {
         log_debug("stateless reset\n");
     } else 
-        log_debug("unexpected close:code=%d\n", err);
+        log_debug("unexpected close:code=%ld\n", err);
     return;
 }
 

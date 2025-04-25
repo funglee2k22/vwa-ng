@@ -21,7 +21,6 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 #include "common.h"
-#include <picotls/../../t/util.h> 
 
 static quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
@@ -136,7 +135,7 @@ int create_quic_conn(char *srv, short port, quicly_conn_t **conn)
     memset(&sa, 0, sizeof(sa));
     sa.sin_family = AF_INET;
     sa.sin_port = htons(port);
-    memcpy(&sa.sin_addr, hp->h_addr, hp->h_length);
+    memcpy(&sa.sin_addr, hp->h_addr_list[0], hp->h_length);
    
     if (quicly_connect(conn, &client_ctx, srv, (struct sockaddr *)&sa, NULL, &next_cid, resumption_token, NULL, NULL, NULL) != 0) {
         log_debug("quicly_connect() failed to connect with %s:%d\n", 

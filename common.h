@@ -54,3 +54,5 @@ bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, si
 int quicly_send_msg(int quic_fd, quicly_stream_t *stream, void *buf, size_t len);
 
 int create_tcp_connection(struct sockaddr *sa);
+
+int create_udp_listener(short port);
