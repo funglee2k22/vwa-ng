@@ -400,9 +400,6 @@ void  setup_quicly_ctx(const char *cert, const char *key, const char *logfile)
     return;
 }
 
-
-
-
 int main(int argc, char **argv)
 {
     char *host = "127.0.0.1";     //quic server address
