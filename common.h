@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <syslog.h>
 #include <sys/syscall.h>
 #include "quicly.h" 
 #include "picotls.h"
@@ -39,7 +40,12 @@ void _debug_printf(const char *function, int line, const char *fmt, ...)
 #undef quicly_debug_printf
 #endif 
 
-#define log_debug(...)  _debug_printf(__func__, __LINE__, __VA_ARGS__)
+#define log_debug(...)  _debug_printf(LOG_DEBUG, __func__, __LINE__, __VA_ARGS__)
+#define log_info(...)   _debug_printf(LOG_INFO, __func__, __LINE__, __VA_ARGS__)
+#define log_warn(...)   _debug_printf(LOG_WARN,__func__, __LINE__, __VA_ARGS__) 
+#define log_error(...)  _debug_printf(LOG_ERROR, __func__, __LINE__, __VA_ARGS__)
+
+
 
 int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream);
 
