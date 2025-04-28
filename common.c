@@ -11,6 +11,8 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 
+#define USE_SYSLOG 1
+
 ptls_context_t *get_tlsctx()
 {
     static ptls_context_t tlsctx = {.random_bytes = ptls_openssl_random_bytes,
@@ -28,16 +30,19 @@ void _debug_printf(const char *function, int line, const char *fmt, ...)
     va_list args;
     time_t current_time; 
     char time_string[50]; 
-    
 
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
     current_time = time(NULL);
     struct tm *time_info  = localtime(&current_time); 
-    
+
+#ifdef USE_SYSLOG
+    syslog(LOG_ERR, "func: %s, line: %d, %s", time_string, function, line, buf);
+#else   
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
     fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
+#endif
     return;
 
 }

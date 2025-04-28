@@ -401,7 +401,10 @@ int main(int argc, char **argv)
     char *srv = "192.168.30.1"; 
     short srv_port = 4433, tcp_lstn_port = 8443; 
     int tcp_fd;   
-    
+    extern const char *__progname;
+
+    openlog(__progname, LOG_PID | LOG_CONS, LOG_USER);
+
     setup_client_ctx(); 
     
     int quic_fd = create_udp_client_socket(srv, srv_port);
@@ -494,7 +497,14 @@ int main(int argc, char **argv)
         log_debug("TCP socket handler thread %ld created for [tcp: %d <-> stream: %ld].\n", 
             tcp_worker_thread, tcp_fd, nstream->stream_id);
       }
-       
+
+    close(tcp_fd);
+    close(quic_fd);
+    quicly_free(conn);
+    quicly_free_context(&client_ctx);
+    quicly_free_context(get_tlsctx());
+    closelog(); 
+    return 0; 
 }
 
 
