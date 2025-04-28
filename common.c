@@ -22,7 +22,21 @@ ptls_context_t *get_tlsctx()
 }
 
 
-void _debug_printf(const char *function, int line, const char *fmt, ...)
+#define USE_SYSLOG 0
+
+#ifdef USE_SYSLOG 
+void _debug_printf(int priority, const char *function, int line, const char *fmt, ...) 
+{
+    char buf[1024];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    syslog(priority, "func: %s, line: %d, %s", function, line, buf);
+    return;     
+}
+#else
+void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
 { 
     char buf[1024];
     va_list args;
@@ -37,10 +51,10 @@ void _debug_printf(const char *function, int line, const char *fmt, ...)
     struct tm *time_info  = localtime(&current_time); 
     
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
+    fprintf(stdout, "func: %s, line: %d, %s", time_string, function, line, buf);
     return;
-
 }
+#endif
 
 int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
 { 
