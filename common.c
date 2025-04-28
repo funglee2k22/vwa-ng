@@ -22,7 +22,7 @@ ptls_context_t *get_tlsctx()
 }
 
 
-#define USE_SYSLOG 0
+#undef USE_SYSLOG 0
 
 #ifdef USE_SYSLOG 
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...) 
@@ -41,8 +41,10 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     char buf[1024];
     va_list args;
     time_t current_time; 
-    char time_string[50]; 
-    
+    char time_string[50];
+
+    if (priority < LOG_INFO)
+	  return;  
 
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
@@ -51,7 +53,7 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     struct tm *time_info  = localtime(&current_time); 
     
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    fprintf(stdout, "func: %s, line: %d, %s", time_string, function, line, buf);
+    printf("func: %s, line: %d, %s", function, line, buf);
     return;
 }
 #endif

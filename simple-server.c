@@ -400,6 +400,8 @@ void  setup_quicly_ctx(const char *cert, const char *key, const char *logfile)
     return;
 }
 
+
+
 int main(int argc, char **argv)
 {
     char *host = "127.0.0.1";     //quic server address
@@ -410,16 +412,15 @@ int main(int argc, char **argv)
 
     quicly_stream_open_t stream_open = {server_on_stream_open};
     setup_quicly_ctx(cert_path, key_path, NULL);
-
-    openlog(__progname, LOG_PID | LOG_CONS, LOG_USER);
+    openlog(__progname, LOG_PID, LOG_DEBUG);
 
     int quic_srv_fd = create_udp_listener(udp_listen_port);
     if (quic_srv_fd < 0) {
-        log_debug("failed to create UDP listener on port %d.\n", udp_listen_port);
+        log_error("failed to create UDP listener on port %d.\n", udp_listen_port);
         return -1;
     }
 
-    log_debug("QPEP Server is running, pid: %lu, UDP listening port: %d, sk_fd: %d\n",
+    log_info("QPEP Server is running, pid: %lu, UDP listening port: %d, sk_fd: %d\n",
             (uint64_t)getpid(), udp_listen_port, quic_srv_fd);
 
     run_server_loop(quic_srv_fd);

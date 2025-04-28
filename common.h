@@ -33,8 +33,17 @@ typedef struct pthread_work {
     quicly_stream_t *stream; 
 } worker_data_t; 
 
-void _debug_printf(const char *function, int line, const char *fmt, ...)
-    __attribute__((format(printf, 3, 4)));
+typedef struct cpep_server_parameters {
+    char *server_ip = "127.0.0.1"; 
+    char *server_certificate_path = "server.crt";
+    char *server_key_path = "server.key"; 
+    short server_udp_port = 4433;
+} server_parameters; 
+
+
+
+void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
+    __attribute__((format(printf, 4, 5)));
 
 #ifdef quicly_debug_printf
 #undef quicly_debug_printf
@@ -43,9 +52,7 @@ void _debug_printf(const char *function, int line, const char *fmt, ...)
 #define log_debug(...)  _debug_printf(LOG_DEBUG, __func__, __LINE__, __VA_ARGS__)
 #define log_info(...)   _debug_printf(LOG_INFO, __func__, __LINE__, __VA_ARGS__)
 #define log_warn(...)   _debug_printf(LOG_WARN,__func__, __LINE__, __VA_ARGS__) 
-#define log_error(...)  _debug_printf(LOG_ERROR, __func__, __LINE__, __VA_ARGS__)
-
-
+#define log_error(...)  _debug_printf(LOG_ERR, __func__, __LINE__, __VA_ARGS__)
 
 int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream);
 
@@ -62,3 +69,6 @@ int quicly_send_msg(int quic_fd, quicly_stream_t *stream, void *buf, size_t len)
 int create_tcp_connection(struct sockaddr *sa);
 
 int create_udp_listener(short port);
+
+int get_opts_server(int argc, char *argv[], server_parameters *paras); 
+
