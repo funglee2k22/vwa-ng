@@ -34,12 +34,11 @@ typedef struct pthread_work {
 } worker_data_t; 
 
 typedef struct cpep_server_parameters {
-    char *server_ip = "127.0.0.1"; 
-    char *server_certificate_path = "server.crt";
-    char *server_key_path = "server.key"; 
-    short server_udp_port = 4433;
-} server_parameters; 
-
+    char *server_ip;
+    char *server_certificate_path;
+    char *server_key_path;
+    short server_udp_port;
+} server_parameters_t; 
 
 
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
@@ -70,5 +69,5 @@ int create_tcp_connection(struct sockaddr *sa);
 
 int create_udp_listener(short port);
 
-int get_opts_server(int argc, char *argv[], server_parameters *paras); 
+int get_opts_server(int argc, char *argv[], server_parameters_t *paras); 
 

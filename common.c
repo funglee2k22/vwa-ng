@@ -11,18 +11,7 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 
-ptls_context_t *get_tlsctx()
-{
-    static ptls_context_t tlsctx = {.random_bytes = ptls_openssl_random_bytes,
-                                    .get_time = &ptls_get_time,
-                                    .key_exchanges = ptls_openssl_key_exchanges,
-                                    .cipher_suites = ptls_openssl_cipher_suites,
-                                    .require_dhe_on_psk = 1};
-    return &tlsctx;
-}
-
-
-#undef USE_SYSLOG 0
+#undef USE_SYSLOG
 
 #ifdef USE_SYSLOG 
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...) 
@@ -33,6 +22,11 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
     syslog(priority, "func: %s, line: %d, %s", function, line, buf);
+    
+    if (priority >= LOG_WARN) {
+	    fprintf(stderr, "func: %s, line: %d, %s", function, line, buf);
+    }
+
     return;     
 }
 #else
@@ -58,6 +52,27 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 }
 #endif
 
+char *get_cur_time_str() 
+{ 
+    static char time_string[50]; 
+    time_t current_time = time(NULL);
+    struct tm *time_info = localtime(&current_time);
+
+    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
+    return time_string;
+} 
+
+ptls_context_t *get_tlsctx()
+{
+    static ptls_context_t tlsctx = {.random_bytes = ptls_openssl_random_bytes,
+                                    .get_time = &ptls_get_time,
+                                    .key_exchanges = ptls_openssl_key_exchanges,
+                                    .cipher_suites = ptls_openssl_cipher_suites,
+                                    .require_dhe_on_psk = 1};
+    return &tlsctx;
+}
+
+
 int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
 { 
     conn_stream_pair_node_t *p = head; 
@@ -71,15 +86,18 @@ int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
     return -1;
 }
 
+//TODO allow to listen on a given NIC by ip address.
+
 int create_tcp_listener(short port)
 { 
     int fd;
     struct sockaddr_in sa;
     
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket failed");
+        log_error("create TCP socket failed.");
         return -1;
     }
+    
 #if 0     
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) != 0) {
         perror("setsockopt(SO_REUSEADDR) failed");
@@ -88,7 +106,7 @@ int create_tcp_listener(short port)
 #endif
 
     if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &(int){1}, sizeof(int)) != 0) {
-        perror("setsockopt(IP_TRANSPARENT) failed");
+        log_error("setsockopt(IP_TRANSPARENT) failed.");
         return -1;
     } 
     
@@ -98,7 +116,7 @@ int create_tcp_listener(short port)
     sa.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(fd, (void *)&sa, sizeof(sa)) != 0) {
-        perror("bind failed");
+        log_error("bind failed");
         return -1;
     }
 
