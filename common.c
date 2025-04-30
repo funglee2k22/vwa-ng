@@ -3,64 +3,14 @@
 #include <netinet/udp.h>
 #include <netdb.h>
 #include <memory.h>
-//#include "picotls/openssl.h"
 #include <errno.h>
-//#include <ev.h>
+#include <syslog.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "common.h"
 #include "quicly.h"
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
-
-#undef USE_SYSLOG
-
-#ifdef USE_SYSLOG 
-void _debug_printf(int priority, const char *function, int line, const char *fmt, ...) 
-{
-    char buf[1024];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    syslog(priority, "func: %s, line: %d, %s", function, line, buf);
-    
-    if (priority >= LOG_WARN) {
-	    fprintf(stderr, "func: %s, line: %d, %s", function, line, buf);
-    }
-
-    return;     
-}
-#else
-void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
-{ 
-    char buf[1024];
-    va_list args;
-    time_t current_time; 
-    char time_string[50];
-
-    if (priority < LOG_INFO)
-	  return;  
-
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    current_time = time(NULL);
-    struct tm *time_info  = localtime(&current_time); 
-    
-    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    printf("func: %s, line: %d, %s", function, line, buf);
-    return;
-}
-#endif
-
-char *get_cur_time_str() 
-{ 
-    static char time_string[50]; 
-    time_t current_time = time(NULL);
-    struct tm *time_info = localtime(&current_time);
-
-    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    return time_string;
-} 
 
 ptls_context_t *get_tlsctx()
 {
@@ -72,6 +22,40 @@ ptls_context_t *get_tlsctx()
     return &tlsctx;
 }
 
+
+#define USE_SYSLOG 0
+
+#ifdef USE_SYSLOG 
+void _debug_printf(int priority, const char *function, int line, const char *fmt, ...) 
+{
+    char buf[1024];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    syslog(priority, "func: %s, line: %d, %s", function, line, buf);
+    return;     
+}
+#else
+void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
+{ 
+    char buf[1024];
+    va_list args;
+    time_t current_time; 
+    char time_string[50]; 
+    
+
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    current_time = time(NULL);
+    struct tm *time_info  = localtime(&current_time); 
+    
+    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
+    fprintf(stdout, "func: %s, line: %d, %s", time_string, function, line, buf);
+    return;
+}
+#endif
 
 int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
 { 
@@ -86,7 +70,28 @@ int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
     return -1;
 }
 
-//TODO allow to listen on a given NIC by ip address.
+int create_tcp_connection(struct sockaddr *sa)
+{
+    int fd;
+    if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        log_debug("socket failed");
+        return -1;
+    }
+
+    if (connect(fd, sa, sizeof(struct sockaddr)) == -1) {
+        log_debug("connect with %s:%dfailed",
+                inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
+                ntohs(((struct sockaddr_in *)sa)->sin_port));
+        close(fd);
+        return -1;
+    }
+
+    log_debug("created tcp sk [%d] to connect %s:%d.\n", fd,
+                inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
+                ntohs(((struct sockaddr_in *)sa)->sin_port));
+
+    return fd;
+}
 
 int create_tcp_listener(short port)
 { 
@@ -94,10 +99,9 @@ int create_tcp_listener(short port)
     struct sockaddr_in sa;
     
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        log_error("create TCP socket failed.");
+        perror("socket failed");
         return -1;
     }
-    
 #if 0     
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) != 0) {
         perror("setsockopt(SO_REUSEADDR) failed");
@@ -106,7 +110,7 @@ int create_tcp_listener(short port)
 #endif
 
     if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &(int){1}, sizeof(int)) != 0) {
-        log_error("setsockopt(IP_TRANSPARENT) failed.");
+        perror("setsockopt(IP_TRANSPARENT) failed");
         return -1;
     } 
     
@@ -116,7 +120,7 @@ int create_tcp_listener(short port)
     sa.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(fd, (void *)&sa, sizeof(sa)) != 0) {
-        log_error("bind failed");
+        perror("bind failed");
         return -1;
     }
 

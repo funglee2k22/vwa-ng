@@ -112,29 +112,6 @@ void setup_client_ctx()
     return; 
 }
 
-int create_quic_conn(char *srv, short port, quicly_conn_t **conn)
-{ 
-    struct sockaddr_in sa;
-    struct hostent *hp;
-
-    if ((hp = gethostbyname(srv)) == NULL) {
-        fprintf(stderr, "func: %s, line: %d, gethostbyname failed\n", __func__, __LINE__);
-        return -1;
-    }
-
-    memset(&sa, 0, sizeof(sa));
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(port);
-    memcpy(&sa.sin_addr, hp->h_addr, hp->h_length);
-   
-    if (quicly_connect(conn, &client_ctx, srv, (struct sockaddr *)&sa, NULL, &next_cid, resumption_token, NULL, NULL, NULL) != 0) {
-        fprintf(stderr, "quicly_connect failed\n");
-        return -1;
-    }
-
-    log_debug("quicly_connect() successful\n");
-    return 0;
-}
 
 void process_quic_msg(int quic_fd, quicly_conn_t *conn, struct msghdr *msg, ssize_t dgram_len)
 {
@@ -162,6 +139,30 @@ int quicly_write_msg_to_buff(quicly_stream_t *stream, void *buf, size_t len)
     
     quicly_streambuf_egress_write(stream, buf, len);
 
+    return 0;
+}
+
+int create_quic_conn(char *srv, short port, quicly_conn_t **conn)
+{ 
+    struct sockaddr_in sa;
+    struct hostent *hp;
+
+    if ((hp = gethostbyname(srv)) == NULL) {
+        fprintf(stderr, "func: %s, line: %d, gethostbyname failed\n", __func__, __LINE__);
+        return -1;
+    }
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(port);
+    memcpy(&sa.sin_addr, hp->h_addr, hp->h_length);
+   
+    if (quicly_connect(conn, &client_ctx, srv, (struct sockaddr *)&sa, NULL, &next_cid, resumption_token, NULL, NULL, NULL) != 0) {
+        fprintf(stderr, "quicly_connect failed\n");
+        return -1;
+    }
+
+    log_debug("quicly_connect() successful\n");
     return 0;
 }
 
