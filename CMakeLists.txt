@@ -23,3 +23,11 @@ target_compile_options(cpep-srv PRIVATE
     -Werror=shift-count-overflow
 )
 
+add_executable(new-srv uthash.h common.h common.c cpep-server.c) 
+target_link_libraries(new-srv PRIVATE quicly ev picotls)
+target_compile_definitions(new-srv PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
+target_compile_options(new-srv PRIVATE
+    -Werror=implicit-function-declaration
+    -Werror=incompatible-pointer-types
+    -Werror=shift-count-overflow
+)

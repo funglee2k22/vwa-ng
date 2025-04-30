@@ -26,17 +26,17 @@
 static quicly_context_t server_ctx;
 static quicly_cid_plaintext_t next_cid;
 quicly_conn_t *conns[256] = {NULL};
-static size_t num_conns = 0;
-
 
 tcp_to_stream_map_node_t *tcp_to_stream_map = NULL;  //used to lookup 
 stream_to_tcp_map_node_t *stream_to_tcp_map = NULL;  //used to lookup tcp fd by stream id
-quicly_conn_map_node_t *conns = NULL;  //used to lookup quic connection by src addr 
+//quicly_conn_map_node_t *conns = NULL;  //used to lookup quic connection by src addr 
 
 static quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn,
                                     quicly_error_t err, uint64_t frame_type, const char *reason, size_t reason_len);
 
+void remove_tcp_ht(tcp_to_stream_map_node_t *ht, int fd);
+void remove_stream_ht(stream_to_tcp_map_node_t *ht, quicly_stream_t *stream);
 
 static quicly_stream_open_t on_stream_open = {server_on_stream_open};
 static quicly_closed_by_remote_t closed_by_remote = {server_on_conn_close};
@@ -126,11 +126,11 @@ error:
     return NULL;
 }
 
-int find_tcp_conn(stream_to_tcp_map_node_t *head, int stream_id)
+int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id)
 {
     stream_to_tcp_map_node_t *s; 
 
-    HASH_FIND_INT(head, &stream_id, s);
+    HASH_FIND_INT(ht, &stream_id, s);
     if (s == NULL) {
         log_debug("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
         return -1;
@@ -165,15 +165,44 @@ void update_stream_tcp_conn_maps(int fd, quicly_stream_t *stream)
         log_warn("tcp_to_stream_map updated <TCP: %d -> stream: %ld >.\n", fd, stream->stream_id); 
     }
 
-    return 0;
+    return;
 }
+
+
+void remove_tcp_ht(tcp_to_stream_map_node_t *ht, int fd) 
+{ 
+    tcp_to_stream_map_node_t *s; 
+    HASH_FIND_INT(ht, &fd, s);
+
+    if (s) { 
+       quicly_stream_t *stream = s->stream; 
+       HASH_DEL(ht, s); 
+       remove_stream_ht(stream_to_tcp_map, stream);
+    }
+
+    return;
+}
+
+void remove_stream_ht(stream_to_tcp_map_node_t *ht, quicly_stream_t *stream)
+{ 
+    stream_to_tcp_map_node_t *s; 
+    HASH_FIND_INT(ht, &(stream -> stream_id), s);
+
+    if (s) {
+	int fd = s->fd; 
+        HASH_DEL(ht, s);
+        remove_tcp_ht(tcp_to_stream_map, fd);
+    } 
+
+    return;
+}   
 
 static void server_on_stream_close(quicly_stream_t *stream, quicly_error_t err)
 {
-    log_info("stream: %ld closed with quicly error code %lu,  %s\n", 
-        stream->stream_id, QUICLY_ERROR_GET_ERROR_CODE(err), 
-        quicly_error_is_quic_transport(err) ? "QUIC transport" : "QUIC application"); 
+    log_info("stream: %ld closed with quicly error code %lu.\n", 
+        stream->stream_id, QUICLY_ERROR_GET_ERROR_CODE(err));
     //TODO: remove stream from stream_to_tcp_map and tcp_to_stream_map
+    
 
     quicly_streambuf_destroy(stream, err);
     return;
@@ -208,7 +237,7 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
     int  buff_len = input.len;
 
     log_debug("QUIC stream [%ld], %ld bytes received,\n", stream->stream_id, input.len);
-    int tcp_fd = find_tcp_conn(stream_to_tcp_map, stream->stream_id);
+    int tcp_fd = find_tcp_conn_ht(stream_to_tcp_map, stream->stream_id);
 
     if (tcp_fd < 0) {
         struct sockaddr_in orig_dst;

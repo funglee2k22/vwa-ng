@@ -260,28 +260,6 @@ static quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_s
     return ret;
 }
 
-int create_tcp_connection(struct sockaddr *sa)
-{
-    int fd;
-    if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        log_debug("socket failed");
-        return -1;
-    }
-
-    if (connect(fd, sa, sizeof(struct sockaddr)) == -1) {
-        log_debug("connect with %s:%dfailed",
-                inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
-                ntohs(((struct sockaddr_in *)sa)->sin_port));
-        close(fd);
-        return -1;
-    }
-
-    log_debug("created tcp sk [%d] to connect %s:%d.\n", fd,
-                inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
-                ntohs(((struct sockaddr_in *)sa)->sin_port));
-
-    return fd;
-}
 
 static void process_quicly_msg(int quic_fd, quicly_conn_t **conns, struct msghdr *msg, size_t dgram_len)
 {
