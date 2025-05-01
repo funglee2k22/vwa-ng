@@ -1,3 +1,6 @@
 [submodule "extern/quicly"]
 	path = extern/quicly
 	url = https://github.com/h2o/quicly.git
+[submodule "extern/uthash"]
+	path = extern/uthash
+	url = https://github.com/troydhanson/uthash.git
