@@ -21,6 +21,7 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 #include "common.h"
+#include <picotls/../../t/util.h>
 
 static quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
@@ -501,8 +502,6 @@ int main(int argc, char **argv)
     close(tcp_fd);
     close(quic_fd);
     quicly_free(conn);
-    quicly_free_context(&client_ctx);
-    quicly_free_context(get_tlsctx());
     closelog(); 
     return 0; 
 }

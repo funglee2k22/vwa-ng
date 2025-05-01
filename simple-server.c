@@ -21,7 +21,7 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 #include "common.h"
-//#include <picotls/../../t/util.h>
+#include <picotls/../../t/util.h>
 
 static quicly_context_t server_ctx;
 static quicly_cid_plaintext_t next_cid;

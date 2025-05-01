@@ -41,8 +41,9 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 #ifdef USE_SYSLOG
     syslog(priority, "func: %s, line: %d, %s", function, line, buf);
 #else
-    current_time = time(NULL);
+    time_t current_time = time(NULL);
     struct tm *time_info  = localtime(&current_time); 
+    char time_string[256];
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
     fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
 #endif
@@ -245,12 +246,12 @@ bool send_dgrams(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num
 void remove_tcp_ht(tcp_to_stream_map_node_t *tcp_to_quic_ht, stream_to_tcp_map_node_t *quic_to_tcp_ht, int fd)
 {
     tcp_to_stream_map_node_t *s;
-    HASH_FIND_INT(ht, &fd, s);
+    HASH_FIND_INT(tcp_to_quic_ht, &fd, s);
 
     if (s) {
        quicly_stream_t *stream = s->stream;
        HASH_DEL(tcp_to_quic_ht, s);
-       remove_stream_ht(quic_to_tcp_ht, stream);
+       remove_stream_ht(quic_to_tcp_ht, tcp_to_quic_ht, stream);
     }
 
     return;
@@ -263,8 +264,8 @@ void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, tcp_to_stream_ma
 
     if (s) {
         int fd = s->fd;
-        HASH_DEL(ht, s);
-        remove_tcp_ht(tcp_to_quic_ht, fd);
+        HASH_DEL(quic_to_tcp_ht, s);
+        remove_tcp_ht(tcp_to_quic_ht, quic_to_tcp_ht, fd);
     }
 
     return;
@@ -308,7 +309,7 @@ int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id)
 
     HASH_FIND_INT(ht, &stream_id, s);
     if (s == NULL) {
-        log_WARN("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
+        log_warn("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
         return -1;
     }
     return s->fd;

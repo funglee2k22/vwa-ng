@@ -21,7 +21,7 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 #include "common.h"
-
+#include <picotls/../../t/util.h>
 
 static quicly_context_t server_ctx;
 static quicly_cid_plaintext_t next_cid;
@@ -170,7 +170,7 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
                     inet_ntoa(((struct sockaddr_in *)&orig_dst)->sin_addr),
                     ntohs(((struct sockaddr_in *)&orig_dst)->sin_port));
 
-        update_stream_tcp_conn_maps(tcp_fd, stream);
+        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_to_stream_map, tcp_fd, stream);
 
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = tcp_fd;
