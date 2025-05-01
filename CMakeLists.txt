@@ -31,3 +31,12 @@ target_compile_options(new-srv PRIVATE
     -Werror=incompatible-pointer-types
     -Werror=shift-count-overflow
 )
+
+add_executable(new-clt uthash.h common.h common.c cpep-client.c) 
+target_link_libraries(new-clt PRIVATE quicly ev picotls)
+target_compile_definitions(new-clt PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
+target_compile_options(new-clt PRIVATE
+    -Werror=implicit-function-declaration
+    -Werror=incompatible-pointer-types
+    -Werror=shift-count-overflow
+)

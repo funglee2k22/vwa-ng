@@ -21,6 +21,8 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 #include "common.h"
+#include "uthash.h"
+
 
 static quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
