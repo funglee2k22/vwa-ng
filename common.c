@@ -23,7 +23,8 @@ ptls_context_t *get_tlsctx()
 }
 
 
-#define USE_SYSLOG 0
+//#define USE_SYSLOG 0
+#undef USE_SYSLOG 
 
 #ifdef USE_SYSLOG 
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...) 
@@ -52,7 +53,7 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     struct tm *time_info  = localtime(&current_time); 
     
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    fprintf(stdout, "func: %s, line: %d, %s", time_string, function, line, buf);
+    fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
     return;
 }
 #endif
