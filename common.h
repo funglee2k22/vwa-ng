@@ -79,10 +79,17 @@ int create_udp_client_socket(char *hostname, short port);
 
 bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num_dgrams);
 
-int quicly_send_msg(int quic_fd, quicly_stream_t *stream, void *buf, size_t len);
-
 int create_tcp_connection(struct sockaddr *sa);
 
 int create_udp_listener(short port);
 
 int get_opts_server(int argc, char *argv[], server_parameters_t *paras); 
+
+int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id);
+
+void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, tcp_to_stream_map_node_t *tcp_to_quic_ht, quicly_stream_t *stream);
+
+void remove_tcp_ht(tcp_to_stream_map_node_t *tcp_to_quic_ht, stream_to_tcp_map_node_t *quic_to_tcp_ht, int fd);
+
+void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map, tcp_to_stream_map_node_t *tcp_to_stream_map, 
+                                int fd, quicly_stream_t *stream);

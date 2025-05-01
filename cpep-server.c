@@ -27,20 +27,15 @@ static quicly_context_t server_ctx;
 static quicly_cid_plaintext_t next_cid;
 quicly_conn_t *conns[256] = {NULL};
 
-tcp_to_stream_map_node_t *tcp_to_stream_map = NULL;  //used to lookup 
+tcp_to_stream_map_node_t *tcp_to_stream_map = NULL;  //used to lookup
 stream_to_tcp_map_node_t *stream_to_tcp_map = NULL;  //used to lookup tcp fd by stream id
-//quicly_conn_map_node_t *conns = NULL;  //used to lookup quic connection by src addr 
+//quicly_conn_map_node_t *conns = NULL;  //used to lookup quic connection by src addr
 
 static quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn,
                                     quicly_error_t err, uint64_t frame_type, const char *reason, size_t reason_len);
-
-void remove_tcp_ht(tcp_to_stream_map_node_t *ht, int fd);
-void remove_stream_ht(stream_to_tcp_map_node_t *ht, quicly_stream_t *stream);
-
 static quicly_stream_open_t on_stream_open = {server_on_stream_open};
 static quicly_closed_by_remote_t closed_by_remote = {server_on_conn_close};
-
 
 static void server_on_stop_sending(quicly_stream_t *stream, quicly_error_t err)
 {
@@ -50,7 +45,7 @@ static void server_on_stop_sending(quicly_stream_t *stream, quicly_error_t err)
 
 static void ctrl_stream_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    log_info("stream: %ld received control message.\n", stream->stream_id);
+    log_debug("stream: %ld received control message.\n", stream->stream_id);
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
@@ -62,8 +57,8 @@ static void ctrl_stream_on_receive(quicly_stream_t *stream, size_t off, const vo
         return;
     }
 
-    //log_debug("QUIC stream [%ld], bytes_received: %zu\n", stream->stream_id, input.len);
-    //log_debug("msg:\"%.*s\"\n", (int)input.len, (char *)input.base);
+    log_debug("QUIC stream [%ld], bytes_received: %zu\n", stream->stream_id, input.len);
+    log_debug("msg:\"%.*s\"\n", (int)input.len, (char *)input.base);
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
 
@@ -72,7 +67,6 @@ static void ctrl_stream_on_receive(quicly_stream_t *stream, size_t off, const vo
 
 void *handle_isp_server(void *data)
 {
-    log_debug("worker: %ld entering\n", pthread_self());
     quicly_conn_t *quic_conn = ((worker_data_t *) data)->conn;
     quicly_stream_t *quic_stream = ((worker_data_t *) data)->stream;
     int tcp_fd = ((worker_data_t *) data)->tcp_fd;
@@ -80,9 +74,8 @@ void *handle_isp_server(void *data)
     log_debug("worker: %ld handles tcp: %d -> stream: %ld\n", pthread_self(), tcp_fd, quic_stream->stream_id);
 
     while (1) {
-
         fd_set readfds;
-        struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
         do {
             FD_ZERO(&readfds);
             FD_SET(tcp_fd, &readfds);
@@ -120,93 +113,12 @@ void *handle_isp_server(void *data)
     }
 
 error:
-    remove_tcp_ht(tcp_to_stream_map, tcp_fd);
+    remove_tcp_ht(tcp_to_stream_map, stream_to_tcp_map, tcp_fd);
     close(tcp_fd);
-    //TODO close QUIC stream also 
+    //TODO close QUIC stream also
     free(data);
+    free(quic_stream);
     return NULL;
-}
-
-int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id)
-{
-    stream_to_tcp_map_node_t *s; 
-
-    HASH_FIND_INT(ht, &stream_id, s);
-    if (s == NULL) {
-        log_debug("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
-        return -1;
-    }
-    return s->fd;
-}
-
-void update_stream_tcp_conn_maps(int fd, quicly_stream_t *stream)
-{
-    stream_to_tcp_map_node_t *s;
-    tcp_to_stream_map_node_t *t;
-
-    HASH_FIND_INT(stream_to_tcp_map, &stream->stream_id, s);
-    if (s == NULL) {
-        s = (stream_to_tcp_map_node_t *)malloc(sizeof(stream_to_tcp_map_node_t));
-        s->stream_id = stream->stream_id;
-        s->fd = fd;
-        HASH_ADD_INT(stream_to_tcp_map, stream_id, s);
-    } else { 
-        s->fd = fd;
-        log_warn("stream_to_tcp_map updated <stream: %ld -> TCP: %d >.\n", stream->stream_id, fd);
-    }  
-
-    HASH_FIND_INT(tcp_to_stream_map, &fd, t);
-    if (t == NULL) {
-        t = (tcp_to_stream_map_node_t *)malloc(sizeof(tcp_to_stream_map_node_t));
-        t->fd = fd;
-        t->stream = stream;
-        HASH_ADD_INT(tcp_to_stream_map, fd, t);
-    } else {
-        t->stream = stream;
-        log_warn("tcp_to_stream_map updated <TCP: %d -> stream: %ld >.\n", fd, stream->stream_id); 
-    }
-
-    return;
-}
-
-
-void remove_tcp_ht(tcp_to_stream_map_node_t *ht, int fd) 
-{ 
-    tcp_to_stream_map_node_t *s; 
-    HASH_FIND_INT(ht, &fd, s);
-
-    if (s) { 
-       quicly_stream_t *stream = s->stream; 
-       HASH_DEL(ht, s); 
-       remove_stream_ht(stream_to_tcp_map, stream);
-    }
-
-    return;
-}
-
-void remove_stream_ht(stream_to_tcp_map_node_t *ht, quicly_stream_t *stream)
-{ 
-    stream_to_tcp_map_node_t *s; 
-    HASH_FIND_INT(ht, &(stream -> stream_id), s);
-
-    if (s) {
-	int fd = s->fd; 
-        HASH_DEL(ht, s);
-        remove_tcp_ht(tcp_to_stream_map, fd);
-    } 
-
-    return;
-}   
-
-static void server_on_stream_close(quicly_stream_t *stream, quicly_error_t err)
-{
-    log_info("stream: %ld closed with quicly error code %lu.\n", 
-        stream->stream_id, QUICLY_ERROR_GET_ERROR_CODE(err));
-    //TODO: remove stream from stream_to_tcp_map and tcp_to_stream_map
-    
-
-    quicly_streambuf_destroy(stream, err);
-    return;
 }
 
 static void server_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
@@ -242,7 +154,7 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
 
     if (tcp_fd < 0) {
         struct sockaddr_in orig_dst;
-        
+
         memcpy(&orig_dst, input.base, sizeof(orig_dst));
         buff_len -= len;
         buff_base += len;
@@ -305,8 +217,8 @@ static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t 
         log_warn("stateless reset\n");
     } else
         log_warn("unexpected close:code=%ld\n", err);
-    
-    quicly_free(conn);   
+
+    quicly_free(conn);
     return;
 }
 
@@ -364,8 +276,9 @@ static void process_quicly_msg(int quic_fd, quicly_conn_t **conns, struct msghdr
 void run_server_loop(int quic_srv_fd)
 {
     log_info("starting server loop with UDP sk: %d...\n", quic_srv_fd);
+
     while (1) {
-        struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
         fd_set readfds;
 
         do {
@@ -426,7 +339,6 @@ error:
 
 }
 
-
 void  setup_quicly_ctx(const char *cert, const char *key, const char *logfile)
 {
     setup_session_cache(get_tlsctx());
@@ -448,8 +360,6 @@ void  setup_quicly_ctx(const char *cert, const char *key, const char *logfile)
 
     return;
 }
-
-
 
 int main(int argc, char **argv)
 {
@@ -478,7 +388,7 @@ int main(int argc, char **argv)
 
     log_info("QPEP Server is exiting.\n");
 
-cleanup: 
+cleanup:
     for (size_t i = 0; conns[i] != NULL; ++i) {
         quicly_free(conns[i]);
         conns[i] = NULL;
