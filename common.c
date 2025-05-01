@@ -311,3 +311,16 @@ void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map,
 
     return;
 }
+
+int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id)
+{
+    stream_to_tcp_map_node_t *s;
+
+    HASH_FIND_INT(ht, &stream_id, s);
+    if (s == NULL) {
+        log_WARN("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
+        return -1;
+    }
+    return s->fd;
+}
+

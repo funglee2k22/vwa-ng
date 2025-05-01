@@ -125,8 +125,6 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
 {
 
     if (stream->stream_id == 0) {
-        /* control stream, handle it separately */
-        //TODO: handle control stream should not be like this.
         ctrl_stream_on_receive(stream, off, src, len);
         return;
     }
