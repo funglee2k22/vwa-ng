@@ -97,7 +97,7 @@ void *handle_isp_server(void *data)
                 goto error;
             }
 
-        log_debug("[tcp: %d -> stream: %ld], received \n %.*s \n", tcp_fd, quic_stream->stream_id, bytes_received,  buff);
+            log_debug("[tcp: %d -> stream: %ld], received \n %.*s \n", tcp_fd, quic_stream->stream_id, bytes_received,  buff);
 
             if (!quicly_sendstate_is_open(&quic_stream->sendstate) && (bytes_received > 0))
                 quicly_get_or_open_stream(quic_stream->conn, quic_stream->stream_id, &quic_stream);
@@ -120,8 +120,9 @@ void *handle_isp_server(void *data)
     }
 
 error:
+    remove_tcp_ht(tcp_to_stream_map, tcp_fd);
     close(tcp_fd);
-    //TODO close QUIC stream also
+    //TODO close QUIC stream also 
     free(data);
     return NULL;
 }

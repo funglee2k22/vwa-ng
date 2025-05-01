@@ -44,7 +44,9 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     va_list args;
     time_t current_time; 
     char time_string[50]; 
-    
+     
+    if (priority < LOG_INFO)
+	  return;  
 
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
