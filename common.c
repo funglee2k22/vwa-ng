@@ -12,6 +12,9 @@
 #include "quicly/defaults.h"
 #include "quicly/streambuf.h"
 
+
+#undef USE_SYSLOG
+
 ptls_context_t *get_tlsctx()
 {
     static ptls_context_t tlsctx = {.random_bytes = ptls_openssl_random_bytes,
@@ -23,21 +26,7 @@ ptls_context_t *get_tlsctx()
 }
 
 
-//#define USE_SYSLOG 0
-#undef USE_SYSLOG
 
-#ifdef USE_SYSLOG
-void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
-{
-    char buf[1024];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    syslog(priority, "func: %s, line: %d, %s", function, line, buf);
-    return;
-}
-#else
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
 {
     char buf[1024];
@@ -51,14 +40,17 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
+#ifdef USE_SYSLOG
+    syslog(priority, "func: %s, line: %d, %s", function, line, buf);
+#else
     current_time = time(NULL);
     struct tm *time_info  = localtime(&current_time);
-
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
     fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
+#endif
     return;
 }
-#endif
+
 
 int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
 {
