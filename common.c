@@ -42,7 +42,7 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     syslog(priority, "func: %s, line: %d, %s", function, line, buf);
 #else
     time_t current_time = time(NULL);
-    struct tm *time_info  = localtime(&current_time); 
+    struct tm *time_info  = localtime(&current_time);
     char time_string[256];
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
     fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
@@ -315,3 +315,30 @@ int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id)
     return s->fd;
 }
 
+int send_quic_dgrams(quicly_context_t ctx, int fd, quicly_conn_t *conn)
+{
+    quicly_address_t dest, src;
+    struct iovec dgrams[10];
+    uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * ctx.transport_params.max_udp_payload_size];
+    size_t num_dgrams = PTLS_ELEMENTSOF(dgrams);
+
+    int ret = quicly_send(conn, &dest, &src, dgrams, &num_dgrams, dgrams_buf, sizeof(dgrams_buf));
+
+    if (ret == 0 && num_dgrams > 0) {
+        //someting to send;
+        size_t j;
+        for (j = 0; j != num_dgrams; ++j) {
+            struct msghdr mess = {.msg_name = &dest.sa, .msg_namelen = quicly_get_socklen(&dest.sa),
+                                  .msg_iov = &dgrams[j], .msg_iovlen = 1};
+            sendmsg(fd, &mess, MSG_DONTWAIT);
+            log_debug("sent %ld bytes message to quic server.\n", dgrams[j].iov_len);
+        }
+    } else if (ret == QUICLY_ERROR_FREE_CONNECTION) {
+        log_error("ret: %d, connection closed.\n", ret);
+    } else if (ret == 0 && num_dgrams == 0) {
+        log_debug("ret: %d, nums_dgrams: %ld, nothing to send.\n", ret, num_dgrams);
+    } else {
+        log_error("ret: %d.", ret);
+    }
+    return ret;
+}
