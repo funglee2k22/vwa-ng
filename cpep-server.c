@@ -152,10 +152,11 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
 
     if (tcp_fd < 0) {
         struct sockaddr_in orig_dst;
+	size_t addr_len = sizeof(orig_dst);
 
         memcpy(&orig_dst, input.base, sizeof(orig_dst));
-        buff_len -= len;
-        buff_base += len;
+        buff_len -= addr_len;
+        buff_base += addr_len;
 
         tcp_fd = create_tcp_connection((struct sockaddr *)&orig_dst);
 

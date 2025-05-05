@@ -388,7 +388,7 @@ int main(int argc, char **argv)
             continue;
         }
 
-        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_fd, nstream->stream_id);
+        update_stream_tcp_conn_maps(stream_to_tcp_map, client_fd, nstream->stream_id);
 
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = client_fd;
