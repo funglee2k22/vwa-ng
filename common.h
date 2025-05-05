@@ -69,7 +69,7 @@ int find_tcp_by_stream_id(stream_to_tcp_map_node_t *stream_to_tcp_map, long int 
 
 void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, long int stream_id);
 
-void update_stream_tcp_conn_mapps(stream_to_tcp_map_node_t *stream_to_tcp_map, 
+void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map, 
                                 int fd, long int stream_id);
 
 

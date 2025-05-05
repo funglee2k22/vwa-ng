@@ -113,7 +113,7 @@ void *handle_isp_server(void *data)
     }
 
 error:
-    remove_tcp_ht(tcp_to_stream_map, stream_to_tcp_map, tcp_fd);
+    remove_stream_ht(stream_to_tcp_map, quic_stream->stream_id);
     close(tcp_fd);
     //TODO close QUIC stream also
     free(data);
@@ -148,7 +148,7 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
     int  buff_len = input.len;
 
     log_debug("QUIC stream [%ld], %ld bytes received,\n", stream->stream_id, input.len);
-    int tcp_fd = find_tcp_conn_ht(stream_to_tcp_map, stream->stream_id);
+    int tcp_fd = find_tcp_by_stream_id(stream_to_tcp_map, stream->stream_id);
 
     if (tcp_fd < 0) {
         struct sockaddr_in orig_dst;
@@ -170,7 +170,7 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
                     inet_ntoa(((struct sockaddr_in *)&orig_dst)->sin_addr),
                     ntohs(((struct sockaddr_in *)&orig_dst)->sin_port));
  
-        register_stream_tcp_pair(tcp_fd, stream);
+        register_stream_tcp_pair(tcp_fd, stream->stream_id);
         
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = tcp_fd;

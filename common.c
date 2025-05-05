@@ -184,21 +184,7 @@ int create_udp_client_socket(char *hostname, short port)
     return fd;
 }
 
-int get_original_addr(int fd, struct sockaddr_in *sa, struct sockaddr_in *da)
-{
-    socklen_t salen = sizeof(*sa);
-    if (get_original_dest_addr(fd, (struct sockaddr_storage *)da) != 0) {
-        log_error("getsockopt(SO_ORIGINAL_DST) failed");
-        return -1;
-    }
 
-    if (getpeername(fd, (struct sockaddr *)sa, &salen) != 0) {
-        log_error("getsockname failed");
-        return -1;
-    }
-    
-    return 0;
-} 
 int get_original_dest_addr(int fd, struct sockaddr_storage *sa)
 {
     socklen_t salen = sizeof(*sa);
@@ -214,6 +200,24 @@ int get_original_dest_addr(int fd, struct sockaddr_storage *sa)
 
     return 0;
 }
+
+int get_original_addr(int fd, struct sockaddr_in *sa, struct sockaddr_in *da)
+{
+    socklen_t salen = sizeof(*sa);
+    if (get_original_dest_addr(fd, (struct sockaddr_storage *)da) != 0) {
+        log_error("getsockopt(SO_ORIGINAL_DST) failed");
+        return -1;
+    }
+
+    if (getpeername(fd, (struct sockaddr *)sa, &salen) != 0) {
+        log_error("getsockname failed");
+        return -1;
+    }
+    
+    return 0;
+} 
+
+
 
 bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num_dgrams)
 {
@@ -289,14 +293,14 @@ void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map,
     return;
 }
 
-int find_tcp_by_stream_id(stream_to_tcp_map_node_t *ht, int stream_id)
+int find_tcp_by_stream_id(stream_to_tcp_map_node_t *ht, long int stream_id)
 {
     stream_to_tcp_map_node_t *s;
 
     HASH_FIND_INT(ht, &stream_id, s);
     if (s == NULL) {
         //Note. it is normal if the tcp stream has not been created yet. 
-        log_debug("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
+        log_debug("No TCP conn peer found for QUIC stream [%ld].\n", stream_id);
         return -1;
     }
     return s->fd;
