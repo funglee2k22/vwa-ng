@@ -196,7 +196,7 @@ int read_ingress_udp_message(int fd, quicly_conn_t *conn)
     while ((rret = recvmsg(fd, &msg, 0)) == -1 && errno == EINTR)
         ;
 
-    log_info("read %ld bytes data from UDP sockets [%d]\n", rret, fd);
+    log_debug("read %ld bytes data from UDP sockets [%d]\n", rret, fd);
 
     if (rret > 0)
         process_quicly_msg(fd, conn, &msg, rret);
@@ -241,13 +241,13 @@ void *tcp_socket_handler(void *data)
                 break;
             }
 
-            log_info("[tcp: %d -> stream: %ld]  write %d bytes from tcp to quic stream egress buf.\n", fd, stream->stream_id, bytes_received);
+            log_debug("[tcp: %d -> stream: %ld]  write %d bytes from tcp to quic stream egress buf.\n", fd, stream->stream_id, bytes_received);
         }
     }
 cleanup:
     log_info("closing [tcp: %d <-> stream: %ld...\n", fd, stream->stream_id);
     remove_tcp_ht(tcp_to_stream_map, stream_to_tcp_map, fd);
-    free(stream);
+    //free(stream);
     close(fd);
     return NULL;
 }
@@ -308,7 +308,7 @@ void get_tcp_orig_dst(int fd, struct sockaddr_in *dst)
         return;
     }
 #endif
-    log_info("TCP connection original destination addr.: %s:%d\n",
+    log_debug("TCP connection original destination addr.: %s:%d\n",
                 inet_ntoa(((struct sockaddr_in *)dst)->sin_addr),
                 ntohs(((struct sockaddr_in *)dst)->sin_port));
     return;
