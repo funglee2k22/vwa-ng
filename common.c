@@ -13,7 +13,6 @@
 
 #undef USE_SYSLOG
 
-#ifdef USE_SYSLOG 
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...) 
 {
     char buf[1024];
@@ -27,40 +26,17 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 	    fprintf(stderr, "func: %s, line: %d, %s", function, line, buf);
     }
 
-    return;     
-}
-#else
-void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
-{ 
-    char buf[1024];
-    va_list args;
-    time_t current_time; 
-    char time_string[50];
 
-    if (priority < LOG_INFO)
-	  return;  
-
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    current_time = time(NULL);
-    struct tm *time_info  = localtime(&current_time); 
-    
+#ifdef USE_SYSLOG
+    syslog(LOG_ERR, "func: %s, line: %d, %s", time_string, function, line, buf);
+#else   
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    printf("func: %s, line: %d, %s", function, line, buf);
-    return;
-}
+    fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
 #endif
+    return;
 
-char *get_cur_time_str() 
-{ 
-    static char time_string[50]; 
-    time_t current_time = time(NULL);
-    struct tm *time_info = localtime(&current_time);
+}
 
-    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    return time_string;
-} 
 
 ptls_context_t *get_tlsctx()
 {
@@ -71,6 +47,7 @@ ptls_context_t *get_tlsctx()
                                     .require_dhe_on_psk = 1};
     return &tlsctx;
 }
+
 
 
 int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
