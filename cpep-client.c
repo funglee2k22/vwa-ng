@@ -131,7 +131,7 @@ int create_quic_conn(char *srv, short port, quicly_conn_t **conn)
     struct hostent *hp;
 
     if ((hp = gethostbyname(srv)) == NULL) {
-        log_error(stderr, "func: %s, line: %d, gethostbyname failed\n", __func__, __LINE__);
+        log_error("gethostbyname failed\n");
         return -1;
     }
 
@@ -208,8 +208,8 @@ void *tcp_socket_handler(void *data)
     int fd = worker->tcp_fd;
     quicly_stream_t *stream = worker->stream;
 
-    log_info("starting TCP socket handler thread %d [tcp: %d <-> stream: %ld].\n", 
-                    get_current_thread_id(), fd, stream->stream_id);
+    log_info("starting TCP socket handler thread %ld [tcp: %d <-> stream: %ld].\n", 
+                    pthread_self(), fd, stream->stream_id);
 
     while (1) {
         fd_set readfds;
@@ -256,7 +256,7 @@ void *udp_socket_handler(void *data)
     int quic_fd = worker->quic_fd;
     quicly_conn_t *conn = worker->conn;
 
-    log_info("starting UDP socket handler %d for quic_fd: %d...\n", get_current_thread_id(), quic_fd);
+    log_info("starting UDP socket handler %ld for quic_fd: %d...\n", pthread_self(), quic_fd);
 
     while (1) {
         struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
@@ -270,7 +270,8 @@ void *udp_socket_handler(void *data)
         if (FD_ISSET(quic_fd, &readfds)) {
             read_ingress_udp_message(quic_fd, conn);
         } else {
-#ifdef 0
+
+#if 0
             quicly_stream_t *ctrl_stream = quicly_get_stream(conn, 0);
             if (quicly_write_msg_to_buff(ctrl_stream, "client is still alive!", strlen("client is still alive!")) != 0) {
                 log_error("quicly_write_msg_to_buff() failed.\n");
@@ -285,7 +286,7 @@ void *udp_socket_handler(void *data)
 
     }
 cleanup:
-    log_debug("UDP socket handler %d exiting, closing...\n", get_current_thread_id(), quic_fd);
+    log_debug("UDP socket handler %ld handling UDP fd %d exiting, closing...\n", pthread_self(), quic_fd);
     close(quic_fd);
     return NULL;
 }
