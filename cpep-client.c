@@ -231,7 +231,7 @@ void *tcp_socket_handler(void *data)
             if (bytes_received == 0)
                 continue;
 
-            log_info("tcp: %d -> stream: %ld, read %d bytes, content:  \n%.*s\n",
+            log_debug("tcp: %d -> stream: %ld, read %d bytes, content:  \n%.*s\n",
                         fd, stream->stream_id, bytes_received, bytes_received, buff);
 
             if (quicly_write_msg_to_buff(stream, buff, bytes_received) != 0) {
