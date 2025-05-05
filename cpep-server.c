@@ -27,7 +27,7 @@ static quicly_context_t server_ctx;
 static quicly_cid_plaintext_t next_cid;
 quicly_conn_t *conns[256] = {NULL};
 
-tcp_to_stream_map_node_t *tcp_to_stream_map = NULL;  //used to lookup
+//tcp_to_stream_map_node_t *tcp_to_stream_map = NULL;  //used to lookup
 stream_to_tcp_map_node_t *stream_to_tcp_map = NULL;  //used to lookup tcp fd by stream id
 //quicly_conn_map_node_t *conns = NULL;  //used to lookup quic connection by src addr
 

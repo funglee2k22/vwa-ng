@@ -19,11 +19,13 @@ typedef struct stream_to_tcp_map_node {
     UT_hash_handle hh; // makes this structure hashable 
 } stream_to_tcp_map_node_t;
 
+/*
 typedef struct tcp_to_stream_map_node { 
     int fd; 
     quicly_stream_t *stream;
     UT_hash_handle hh; // makes this structure hashable
 } tcp_to_stream_map_node_t;
+*/
 
 typedef struct quicly_conn_map_node { 
     struct sockaddr_in addr;
@@ -71,9 +73,9 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 #define log_error(...)  _debug_printf(LOG_ERR, __func__, __LINE__, __VA_ARGS__)
 
 #define register_stream_tcp_pair(tcp_fd, quic_stream) \
-        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_to_stream_map, tcp_fd, quic_stream)
+        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_fd, quic_stream)
 
-int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream);
+//int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream);
 
 ptls_context_t *get_tlsctx();
 
