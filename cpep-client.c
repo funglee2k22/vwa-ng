@@ -66,11 +66,13 @@ static void client_on_receive(quicly_stream_t *stream, size_t off, const void *s
         return;
     }
 
-    log_info("[stream: %ld -> tcp: %d], bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);
+    log_debug("[stream: %ld -> tcp: %d], bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);
 
     /* initiate connection close after receiving all data */
+#ifdef NOT_SURE
     if (quicly_recvstate_transfer_complete(&stream->recvstate))
         quicly_close(stream->conn, 0, "");
+#endif
 
     return;
 }

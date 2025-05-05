@@ -309,7 +309,7 @@ int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id)
 
     HASH_FIND_INT(ht, &stream_id, s);
     if (s == NULL) {
-        log_warn("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
+        log_debug("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
         return -1;
     }
     return s->fd;
