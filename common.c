@@ -184,6 +184,21 @@ int create_udp_client_socket(char *hostname, short port)
     return fd;
 }
 
+int get_original_addr(int fd, struct sockaddr_in *sa, struct sockaddr_in *da)
+{
+    socklen_t salen = sizeof(*sa);
+    if (get_original_dest_addr(fd, (struct sockaddr_storage *)da) != 0) {
+        log_error("getsockopt(SO_ORIGINAL_DST) failed");
+        return -1;
+    }
+
+    if (getpeername(fd, (struct sockaddr *)sa, &salen) != 0) {
+        log_error("getsockname failed");
+        return -1;
+    }
+    
+    return 0;
+} 
 int get_original_dest_addr(int fd, struct sockaddr_storage *sa)
 {
     socklen_t salen = sizeof(*sa);
@@ -243,72 +258,44 @@ bool send_dgrams(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num
     return true;
 }
 
-void remove_tcp_ht(tcp_to_stream_map_node_t *tcp_to_quic_ht, stream_to_tcp_map_node_t *quic_to_tcp_ht, int fd)
-{
-    tcp_to_stream_map_node_t *s;
-    HASH_FIND_INT(tcp_to_quic_ht, &fd, s);
-
-    if (s) {
-       quicly_stream_t *stream = s->stream;
-       HASH_DEL(tcp_to_quic_ht, s);
-       remove_stream_ht(quic_to_tcp_ht, tcp_to_quic_ht, stream);
-    }
-
-    return;
-}
-
-void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, tcp_to_stream_map_node_t *tcp_to_quic_ht, quicly_stream_t *stream)
+void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, long int stream_id)
 {
     stream_to_tcp_map_node_t *s;
-    HASH_FIND_INT(quic_to_tcp_ht, &(stream -> stream_id), s);
+    HASH_FIND_INT(quic_to_tcp_ht, &stream_id, s);
 
     if (s) {
-        int fd = s->fd;
         HASH_DEL(quic_to_tcp_ht, s);
-        remove_tcp_ht(tcp_to_quic_ht, quic_to_tcp_ht, fd);
     }
 
     return;
 }
 
 void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map,
-                                 tcp_to_stream_map_node_t *tcp_to_stream_map,
-                                 int fd, quicly_stream_t *stream)
+                                 int fd, long int stream_id)
 {
     stream_to_tcp_map_node_t *s;
-    tcp_to_stream_map_node_t *t;
 
-    HASH_FIND_INT(stream_to_tcp_map, &stream->stream_id, s);
+    HASH_FIND_INT(stream_to_tcp_map, &(stream_id), s);
     if (s == NULL) {
         s = (stream_to_tcp_map_node_t *)malloc(sizeof(stream_to_tcp_map_node_t));
-        s->stream_id = stream->stream_id;
+        s->stream_id = stream_id;
         s->fd = fd;
         HASH_ADD_INT(stream_to_tcp_map, stream_id, s);
     } else {
         s->fd = fd;
-        log_warn("stream_to_tcp_map updated <stream: %ld -> TCP: %d >.\n", stream->stream_id, fd);
-    }
-
-    HASH_FIND_INT(tcp_to_stream_map, &fd, t);
-    if (t == NULL) {
-        t = (tcp_to_stream_map_node_t *)malloc(sizeof(tcp_to_stream_map_node_t));
-        t->fd = fd;
-        t->stream = stream;
-        HASH_ADD_INT(tcp_to_stream_map, fd, t);
-    } else {
-        t->stream = stream;
-        log_warn("tcp_to_stream_map updated <TCP: %d -> stream: %ld >.\n", fd, stream->stream_id);
+        log_warn("stream_to_tcp_map updated <stream: %ld -> TCP: %d >.\n", stream_id, fd);
     }
 
     return;
 }
 
-int find_tcp_conn_ht(stream_to_tcp_map_node_t *ht, int stream_id)
+int find_tcp_by_stream_id(stream_to_tcp_map_node_t *ht, int stream_id)
 {
     stream_to_tcp_map_node_t *s;
 
     HASH_FIND_INT(ht, &stream_id, s);
     if (s == NULL) {
+        //Note. it is normal if the tcp stream has not been created yet. 
         log_debug("No TCP conn peer found for QUIC stream [%d].\n", stream_id);
         return -1;
     }

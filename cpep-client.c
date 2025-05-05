@@ -31,8 +31,6 @@ static ptls_iovec_t resumption_token;
 static quicly_error_t client_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream);
 static quicly_stream_open_t stream_open = {client_on_stream_open};
 
-
-tcp_to_stream_map_node_t *tcp_to_stream_map = NULL;  //used to lookup
 stream_to_tcp_map_node_t *stream_to_tcp_map = NULL;  //used to lookup tcp fd by stream id
 
 static void client_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
@@ -69,10 +67,10 @@ static void client_on_receive(quicly_stream_t *stream, size_t off, const void *s
     log_debug("[stream: %ld -> tcp: %d], bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);
 
     /* initiate connection close after receiving all data */
-#ifdef NOT_SURE
-    if (quicly_recvstate_transfer_complete(&stream->recvstate))
-        quicly_close(stream->conn, 0, "");
-#endif
+    if (quicly_recvstate_transfer_complete(&stream->recvstate)) { 
+        log_info("stream: %ld received all data, and calling quicly_close()\n", stream->stream_id);
+        quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
+    }
 
     return;
 }
@@ -107,7 +105,7 @@ static quicly_error_t client_on_stream_open(quicly_stream_open_t *self, quicly_s
         return ret;
     stream->callbacks = &stream_callbacks;
 
-    log_info("stream: %ld opened.\n", stream->stream_id);
+    log_debug("stream: %ld opened.\n", stream->stream_id);
     return 0;
 }
 
@@ -212,7 +210,7 @@ void *tcp_socket_handler(void *data)
 
     log_info("starting TCP socket handler thread %ld [tcp: %d <-> stream: %ld].\n", 
                     pthread_self(), fd, stream->stream_id);
-
+    
     while (1) {
         fd_set readfds;
         struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
@@ -246,7 +244,7 @@ void *tcp_socket_handler(void *data)
     }
 cleanup:
     log_info("closing [tcp: %d <-> stream: %ld...\n", fd, stream->stream_id);
-    remove_tcp_ht(tcp_to_stream_map, stream_to_tcp_map, fd);
+    remove_stream_ht(stream_to_tcp_map, stream->stream_id);
     //free(stream);
     close(fd);
     return NULL;
@@ -390,7 +388,7 @@ int main(int argc, char **argv)
             continue;
         }
 
-        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_to_stream_map, tcp_fd, nstream);
+        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_fd, nstream->stream_id);
 
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = client_fd;
