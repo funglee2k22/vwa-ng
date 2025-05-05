@@ -169,9 +169,9 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
         log_debug("created TCP conn. %d to dest %s:%d.\n", tcp_fd,
                     inet_ntoa(((struct sockaddr_in *)&orig_dst)->sin_addr),
                     ntohs(((struct sockaddr_in *)&orig_dst)->sin_port));
-
-        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_to_stream_map, tcp_fd, stream);
-
+ 
+        register_stream_tcp_pair(tcp_fd, stream);
+        
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = tcp_fd;
         data->conn = stream->conn;
