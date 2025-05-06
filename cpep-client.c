@@ -404,14 +404,6 @@ int main(int argc, char **argv)
 
         add_stream_tcp_peer(nstream->stream_id, client_fd);
 
-	{ 
-	    int test_fd = find_tcp_by_stream_id(stream_to_tcp_map, nstream->stream_id); 
-	    if (test_fd != client_fd) { 
-		    printf("ht: %p, test_fd: %d expected: %d\n", stream_to_tcp_map, test_fd, client_fd);
-		    exit(-1);
-	    } 
-	} 
-
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = client_fd;
         data->conn = conn;

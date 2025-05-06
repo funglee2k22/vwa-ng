@@ -122,7 +122,7 @@ void *handle_isp_server(void *data)
             } else {
                 log_debug("[tcp: %d -> stream: %ld] quic stream is closed or no data to write.\n",
                         tcp_fd, quic_stream->stream_id);
-                break;
+                //break;
             }
         }
     }
@@ -131,7 +131,6 @@ error:
     remove_stream_ht(stream_to_tcp_map, quic_stream->stream_id);
     close(tcp_fd);
     //TODO close QUIC stream also
-    free(data);
     free(quic_stream);
     return NULL;
 }
@@ -196,13 +195,15 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
         pthread_t worker_thread;
         pthread_create(&worker_thread, NULL, handle_isp_server, (void *)data);
         log_debug("worker: %ld, handle [quic: %ld <- tcp: %d]\n", worker_thread, stream->stream_id, tcp_fd);
+	pthread_detach(worker_thread);
     }
 
     if (tcp_fd > 0 && buff_len > 0) {
         ssize_t bytes_sent = send(tcp_fd, buff_base, buff_len, 0);
         if (bytes_sent == -1) {
-            log_debug("[stream: %ld -> tcp: %d], tcp send() failed\n", stream->stream_id, tcp_fd);
-            close(tcp_fd);
+            log_error("[stream: %ld -> tcp: %d], tcp send() failed\n", stream->stream_id, tcp_fd);
+            remove_stream_ht(stream_to_tcp_map, stream->stream_id);
+	    close(tcp_fd);
             return;
         }
         log_debug("[stream: %ld -> tcp: %d], bytes: %zu sent\n", stream->stream_id, tcp_fd, bytes_sent);
