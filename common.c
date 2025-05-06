@@ -262,23 +262,25 @@ bool send_dgrams(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num
     return true;
 }
 
-void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, long int stream_id)
+void remove_stream_ht(long int stream_id)
 {
     stream_to_tcp_map_node_t *s;
-    HASH_FIND_INT(quic_to_tcp_ht, &stream_id, s);
+    extern stream_to_tcp_map_node_t *stream_to_tcp_map;
+
+    HASH_FIND_INT(stream_to_tcp_map, &stream_id, s);
 
     if (s) {
-        HASH_DEL(quic_to_tcp_ht, s);
+        HASH_DEL(stream_to_tcp_map, s);
     }
 
     return;
 }
 
 
-void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map,
-                                 int fd, long int stream_id)
+void update_stream_tcp_conn_maps(int fd, long int stream_id)
 {
     stream_to_tcp_map_node_t *s;
+    extern stream_to_tcp_map_node_t *stream_to_tcp_map;
 
     HASH_FIND_INT(stream_to_tcp_map, &(stream_id), s);
     if (s == NULL) {
@@ -310,16 +312,19 @@ void add_stream_tcp_peer(long int stream_id, int fd)
     return;
 }
 
-int find_tcp_by_stream_id(stream_to_tcp_map_node_t *ht, long int stream_id)
+int find_tcp_by_stream_id(long int stream_id)
 {
-    stream_to_tcp_map_node_t *s;
+    stream_to_tcp_map_node_t *s = NULL;
+    int key = (int) stream_id; 
+    extern stream_to_tcp_map_node_t *stream_to_tcp_map; 
 
-    HASH_FIND_INT(ht, &stream_id, s);
+    HASH_FIND_INT(stream_to_tcp_map, &key, s);
+    
     if (s == NULL) {
-        //Note. it is normal if the tcp stream has not been created yet. 
         log_debug("No TCP conn peer found for QUIC stream [%ld].\n", stream_id);
         return -1;
     }
+
     return s->fd;
 }
 

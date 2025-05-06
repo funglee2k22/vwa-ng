@@ -51,7 +51,7 @@ static void client_on_receive(quicly_stream_t *stream, size_t off, const void *s
 
     char buff[4096];
     memcpy(buff, input.base, len);
-    int tcp_fd = find_tcp_by_stream_id(stream_to_tcp_map, stream->stream_id);
+    int tcp_fd = find_tcp_by_stream_id(stream->stream_id);
 
     if (tcp_fd < 0) {
         log_error("stream: %ld, could not find tcp_sk peer to write.\n", stream->stream_id);
@@ -244,7 +244,7 @@ void *tcp_socket_handler(void *data)
     }
 cleanup:
     log_info("closing [tcp: %d <-> stream: %ld...\n", fd, stream->stream_id);
-    remove_stream_ht(stream_to_tcp_map, stream->stream_id);
+    remove_stream_ht(stream->stream_id);
     //free(stream);
     close(fd);
     return NULL;

@@ -123,7 +123,8 @@ void *handle_isp_server(void *data)
     }
 
 error:
-    remove_stream_ht(stream_to_tcp_map, quic_stream->stream_id);
+   
+    remove_stream_ht(quic_stream->stream_id);
     close(tcp_fd);
     //TODO close QUIC stream also
     return NULL;
@@ -131,6 +132,8 @@ error:
 
 static void server_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
+
+    log_warn("stream: %ld receive buffer.\n", stream->stream_id);
 
     if (stream->stream_id == 0) {
         ctrl_stream_on_receive(stream, off, src, len);
@@ -156,8 +159,8 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
     int  buff_len = input.len;
 
     log_debug("QUIC stream [%ld], %ld bytes received,\n", stream->stream_id, input.len);
-    int tcp_fd = find_tcp_by_stream_id(stream_to_tcp_map, stream->stream_id);
 
+    int tcp_fd = find_tcp_by_stream_id(stream->stream_id);
     if (tcp_fd < 0) {
         struct sockaddr_in orig_dst;
         size_t addr_len = sizeof(orig_dst);
@@ -200,7 +203,7 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
         ssize_t bytes_sent = send(tcp_fd, buff_base, buff_len, 0);
         if (bytes_sent == -1) {
             log_error("[stream: %ld -> tcp: %d], tcp send() failed\n", stream->stream_id, tcp_fd);
-            remove_stream_ht(stream_to_tcp_map, stream->stream_id);
+            remove_stream_ht(stream->stream_id);
             close(tcp_fd);
             return;
         }
@@ -278,8 +281,9 @@ static void process_quicly_msg(int quic_fd, quicly_conn_t **conns, struct msghdr
             quicly_receive(conns[i], NULL, msg->msg_name, &decoded);
         } else {
             /* assume that the packet is a new connection */
-            quicly_accept(conns + i, &server_ctx, NULL, msg->msg_name, &decoded, NULL, &next_cid, NULL, NULL);
-            log_info("find a new connection.\n");
+            quicly_accept(conns + i, &server_ctx, NULL, msg->msg_name, &decoded, NULL, &next_cid, NULL, NULL); 
+	    struct sockaddr_in *src = (struct sockaddr_in *) msg->msg_name; 
+            log_info("find a new connection from: %s:%d.\n", inet_ntoa(src->sin_addr), ntohs(src->sin_port));
         }
     }
 
