@@ -37,6 +37,21 @@ static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t 
 static quicly_stream_open_t on_stream_open = {server_on_stream_open};
 static quicly_closed_by_remote_t closed_by_remote = {server_on_conn_close};
 
+void add_stream_tcp_peer(long int stream_id, int fd)
+{
+    stream_to_tcp_map_node_t  *s;
+
+    HASH_FIND_INT(stream_to_tcp_map, &stream_id, s);
+    if (s == NULL) {
+        s = (stream_to_tcp_map_node_t *)malloc(sizeof *s);
+        s->stream_id = stream_id;
+        HASH_ADD_INT(stream_to_tcp_map, stream_id, s);  /* id is the key field */
+    }
+    s->fd = fd;
+    return;
+}
+
+
 static void server_on_stop_sending(quicly_stream_t *stream, quicly_error_t err)
 {
     log_info("stream: %ld received STOP_SENDING: %lu \n", stream->stream_id, QUICLY_ERROR_GET_ERROR_CODE(err));
@@ -171,7 +186,7 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
                     inet_ntoa(((struct sockaddr_in *)&orig_dst)->sin_addr),
                     ntohs(((struct sockaddr_in *)&orig_dst)->sin_port));
  
-        register_stream_tcp_pair(tcp_fd, stream->stream_id);
+        add_stream_tcp_peer(stream->stream_id, tcp_fd);
         
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = tcp_fd;

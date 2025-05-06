@@ -312,6 +312,20 @@ void get_tcp_orig_dst(int fd, struct sockaddr_in *dst)
     return;
 }
 
+void add_stream_tcp_peer(long int stream_id, int fd) 
+{ 
+    stream_to_tcp_map_node_t  *s;
+
+    HASH_FIND_INT(stream_to_tcp_map, &stream_id, s); 
+    if (s == NULL) {
+        s = (stream_to_tcp_map_node_t *)malloc(sizeof *s);
+        s->stream_id = stream_id;
+        HASH_ADD_INT(stream_to_tcp_map, stream_id, s);  /* id is the key field */
+    }
+    s->fd = fd;
+    return;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -388,7 +402,15 @@ int main(int argc, char **argv)
             continue;
         }
 
-        update_stream_tcp_conn_maps(stream_to_tcp_map, client_fd, nstream->stream_id);
+        add_stream_tcp_peer(nstream->stream_id, client_fd);
+
+	{ 
+	    int test_fd = find_tcp_by_stream_id(stream_to_tcp_map, nstream->stream_id); 
+	    if (test_fd != client_fd) { 
+		    printf("ht: %p, test_fd: %d expected: %d\n", stream_to_tcp_map, test_fd, client_fd);
+		    exit(-1);
+	    } 
+	} 
 
         worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
         data->tcp_fd = client_fd;

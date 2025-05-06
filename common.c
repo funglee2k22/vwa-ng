@@ -274,6 +274,7 @@ void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, long int stream_
     return;
 }
 
+
 void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map,
                                  int fd, long int stream_id)
 {
@@ -285,7 +286,7 @@ void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map,
         s->stream_id = stream_id;
         s->fd = fd;
         HASH_ADD_INT(stream_to_tcp_map, stream_id, s);
-	log_info("update hash [%ld] -> %d\n", s->stream_id, s->fd);
+	log_info("update ht %p hash [%ld] -> %d\n", stream_to_tcp_map, s->stream_id, s->fd);
     } else {
         s->fd = fd;
         log_warn("stream_to_tcp_map updated <stream: %ld -> TCP: %d >.\n", stream_id, fd);

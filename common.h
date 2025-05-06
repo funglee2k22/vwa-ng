@@ -13,7 +13,7 @@
 
 
 typedef struct stream_to_tcp_map_node { 
-    long int stream_id;
+    long int stream_id; //key 
     int fd;
     UT_hash_handle hh; // makes this structure hashable 
 } stream_to_tcp_map_node_t;
@@ -71,6 +71,8 @@ void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, long int stream_
 
 void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map, 
                                 int fd, long int stream_id);
+
+void add_stream_id_tcp_pair(stream_to_tcp_map_node_t *ht, int fd, long int stream_id); 
 
 
 ptls_context_t *get_tlsctx();
