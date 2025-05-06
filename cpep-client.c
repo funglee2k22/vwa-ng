@@ -292,6 +292,56 @@ cleanup:
 }
 
 
+void run_client_loop(int tcp_fd, quicly_conn_t *conn) 
+{ 
+    struct sockaddr_in tcp_remote_addr;
+    socklen_t tcp_addr_len = sizeof(tcp_remote_addr);
+    int ret = 0;
+
+    while (1) {
+
+        int client_fd = accept(tcp_fd, (struct sockaddr *)&tcp_remote_addr, &tcp_addr_len);
+        if (client_fd < 0) {
+            log_error("tcp_sk: %d accept() failed.\n", tcp_fd);
+            break;
+        }
+
+        struct sockaddr_in tcp_orig_addr;
+        get_original_dest_addr(client_fd, &tcp_orig_addr);
+
+        log_info("accepted a new TCP [%d] connection [%s:%d --> %s:%d\n", client_fd,
+            inet_ntoa(tcp_remote_addr.sin_addr), ntohs(tcp_remote_addr.sin_port),
+            inet_ntoa(tcp_orig_addr.sin_addr), ntohs(tcp_orig_addr.sin_port));
+
+        quicly_stream_t *nstream = NULL;
+        if ((ret = quicly_open_stream(conn, &nstream, 0)) != 0) {
+            log_error("quic conn failed to open quicly_open_stream() for tcp %d with (ret: %d)\n", client_fd, ret);
+            close(client_fd);
+            continue;
+        }
+        
+        if (quicly_write_msg_to_buff(nstream, (void *)&tcp_orig_addr, tcp_addr_len) != 0) {
+            log_error("sending original connection header failed.\n");
+            close(client_fd);
+            continue;
+        }
+
+        add_stream_tcp_peer(nstream->stream_id, client_fd);
+
+        worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
+        data->tcp_fd = client_fd;
+        data->stream = nstream;
+        pthread_t tcp_worker_thread;
+
+        pthread_create(&tcp_worker_thread, NULL, tcp_socket_handler, (void *)data);
+        pthread_detach(tcp_worker_thread);
+    }
+
+cleanup:
+    close(tcp_fd);
+    return;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -337,52 +387,18 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    struct sockaddr_in tcp_remote_addr;
-    socklen_t tcp_addr_len = sizeof(tcp_remote_addr);
+    log_error("proxy started and listen on TCP port %d\n", tcp_lstn_port);
 
-    while (1) {
-
-    int client_fd = accept(tcp_fd, (struct sockaddr *)&tcp_remote_addr, &tcp_addr_len);
-        if (client_fd < 0) {
-            log_error("tcp_sk: %d accept() failed.\n", tcp_fd);
-            goto cleanup;
-        }
-
-        struct sockaddr_in tcp_orig_addr;
-        get_original_dest_addr(client_fd, &tcp_orig_addr);
-
-        log_info("accepted a new TCP [%d] connection [%s:%d --> %s:%d\n", client_fd,
-            inet_ntoa(tcp_remote_addr.sin_addr), ntohs(tcp_remote_addr.sin_port),
-            inet_ntoa(tcp_orig_addr.sin_addr), ntohs(tcp_orig_addr.sin_port));
-
-        quicly_stream_t *nstream = NULL;
-        if ((ret = quicly_open_stream(conn, &nstream, 0)) != 0) {
-            log_error("quic conn failed to open quicly_open_stream() for tcp %d with (ret: %d)\n", client_fd, ret);
-            close(client_fd);
-            continue;
-        }
-        
-        if (quicly_write_msg_to_buff(nstream, (void *)&tcp_orig_addr, tcp_addr_len) != 0) {
-            log_error("sending original connection header failed.\n");
-            close(client_fd);
-            continue;
-        }
-
-        add_stream_tcp_peer(nstream->stream_id, client_fd);
-
-        worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
-        data->tcp_fd = client_fd;
-        data->conn = conn;
-        data->stream = nstream;
-        pthread_t tcp_worker_thread;
-
-        pthread_create(&tcp_worker_thread, NULL, tcp_socket_handler, (void *)data);
-        pthread_detach(tcp_worker_thread);
-    }
+    run_client_loop(tcp_fd, conn);
 
 cleanup:
-    close(quic_fd);
-    close(tcp_fd);
+    if (tcp_fd)
+        close(tcp_fd);
+    if (conn)
+	quicly_close(conn, 0, "exiting from main()");
+    if (quic_fd)
+	close(quic_fd);	
+
     return 0;
 }
 
