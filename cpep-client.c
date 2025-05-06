@@ -292,40 +292,6 @@ cleanup:
 }
 
 
-void get_tcp_orig_dst(int fd, struct sockaddr_in *dst)
-{
-    socklen_t len = sizeof(*dst);
-
-#ifndef SO_ORIGINAL_DST
-#define SO_ORIGINAL_DST 80
-#endif
-
-#ifdef SO_ORIGINAL_DST
-    if (getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, dst, &len) != 0) {
-        log_error("getsockopt() error:  \n");
-        return;
-    }
-#endif
-    log_debug("TCP connection original destination addr.: %s:%d\n",
-                inet_ntoa(((struct sockaddr_in *)dst)->sin_addr),
-                ntohs(((struct sockaddr_in *)dst)->sin_port));
-    return;
-}
-
-void add_stream_tcp_peer(long int stream_id, int fd) 
-{ 
-    stream_to_tcp_map_node_t  *s;
-
-    HASH_FIND_INT(stream_to_tcp_map, &stream_id, s); 
-    if (s == NULL) {
-        s = (stream_to_tcp_map_node_t *)malloc(sizeof *s);
-        s->stream_id = stream_id;
-        HASH_ADD_INT(stream_to_tcp_map, stream_id, s);  /* id is the key field */
-    }
-    s->fd = fd;
-    return;
-}
-
 
 int main(int argc, char **argv)
 {
@@ -353,8 +319,9 @@ int main(int argc, char **argv)
         log_error("quic conn failed to open quicly_open_stream() failed: (ret: %d)\n", ret);
         return -1;
     }
-
-    quicly_write_msg_to_buff(ctrl_stream, "hello world!\n", strlen("hello world!"));
+    
+    char *hello_msg = "quic client connected!\n";
+    quicly_write_msg_to_buff(ctrl_stream, hello_msg, strlen(hello_msg));
 
     worker_data_t *data = (worker_data_t *)malloc(sizeof(worker_data_t));
     data->quic_fd = quic_fd;
@@ -378,12 +345,11 @@ int main(int argc, char **argv)
     int client_fd = accept(tcp_fd, (struct sockaddr *)&tcp_remote_addr, &tcp_addr_len);
         if (client_fd < 0) {
             log_error("tcp_sk: %d accept() failed.\n", tcp_fd);
-            close(tcp_fd);
-            break;
+            goto cleanup;
         }
 
         struct sockaddr_in tcp_orig_addr;
-        get_tcp_orig_dst(client_fd, &tcp_orig_addr);
+        get_orignal_dest_addr(client_fd, &tcp_orig_addr);
 
         log_info("accepted a new TCP [%d] connection [%s:%d --> %s:%d\n", client_fd,
             inet_ntoa(tcp_remote_addr.sin_addr), ntohs(tcp_remote_addr.sin_port),
@@ -395,7 +361,7 @@ int main(int argc, char **argv)
             close(client_fd);
             continue;
         }
-
+        
         if (quicly_write_msg_to_buff(nstream, (void *)&tcp_orig_addr, tcp_addr_len) != 0) {
             log_error("sending original connection header failed.\n");
             close(client_fd);

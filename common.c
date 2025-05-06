@@ -295,6 +295,21 @@ void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map,
     return;
 }
 
+void add_stream_tcp_peer(long int stream_id, int fd)
+{
+    stream_to_tcp_map_node_t  *s;
+    extern stream_to_tcp_map_node_t *stream_to_tcp_map;
+
+    HASH_FIND_INT(stream_to_tcp_map, &stream_id, s);
+    if (s == NULL) {
+        s = (stream_to_tcp_map_node_t *)malloc(sizeof *s);
+        s->stream_id = stream_id; /* stream_id is the key */
+        HASH_ADD_INT(stream_to_tcp_map, stream_id, s);  
+    }
+    s->fd = fd;
+    return;
+}
+
 int find_tcp_by_stream_id(stream_to_tcp_map_node_t *ht, long int stream_id)
 {
     stream_to_tcp_map_node_t *s;

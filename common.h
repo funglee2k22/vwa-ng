@@ -61,19 +61,13 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 #define log_warn(...)   _debug_printf(LOG_WARNING,__func__, __LINE__, __VA_ARGS__) 
 #define log_error(...)  _debug_printf(LOG_ERR, __func__, __LINE__, __VA_ARGS__)
 
-#define register_stream_tcp_pair(fd, stream_id) \
-        update_stream_tcp_conn_maps(stream_to_tcp_map, tcp_fd, stream_id)
+//TODO: add_stream_tcp_peer uses extern variable stream_to_tcp_map 
+void add_stream_tcp_peer(long int stream_id, int fd);
 
 //give stream id, and return the tcp fd if exists, otherwise -1;
-int find_tcp_by_stream_id(stream_to_tcp_map_node_t *stream_to_tcp_map, long int stream_id); 
+int find_tcp_by_stream_id(stream_to_tcp_map_node_t *quic_to_tcp_ht, long int stream_id); 
 
 void remove_stream_ht(stream_to_tcp_map_node_t *quic_to_tcp_ht, long int stream_id);
-
-void update_stream_tcp_conn_maps(stream_to_tcp_map_node_t *stream_to_tcp_map, 
-                                int fd, long int stream_id);
-
-void add_stream_id_tcp_pair(stream_to_tcp_map_node_t *ht, int fd, long int stream_id); 
-
 
 ptls_context_t *get_tlsctx();
 
