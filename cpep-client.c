@@ -349,7 +349,7 @@ int main(int argc, char **argv)
         }
 
         struct sockaddr_in tcp_orig_addr;
-        get_orignal_dest_addr(client_fd, &tcp_orig_addr);
+        get_original_dest_addr(client_fd, &tcp_orig_addr);
 
         log_info("accepted a new TCP [%d] connection [%s:%d --> %s:%d\n", client_fd,
             inet_ntoa(tcp_remote_addr.sin_addr), ntohs(tcp_remote_addr.sin_port),

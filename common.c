@@ -185,7 +185,7 @@ int create_udp_client_socket(char *hostname, short port)
 }
 
 
-int get_original_dest_addr(int fd, struct sockaddr_storage *sa)
+int get_original_dest_addr(int fd, struct sockaddr_in *sa)
 {
     socklen_t salen = sizeof(*sa);
 
@@ -204,7 +204,7 @@ int get_original_dest_addr(int fd, struct sockaddr_storage *sa)
 int get_original_addr(int fd, struct sockaddr_in *sa, struct sockaddr_in *da)
 {
     socklen_t salen = sizeof(*sa);
-    if (get_original_dest_addr(fd, (struct sockaddr_storage *)da) != 0) {
+    if (get_original_dest_addr(fd, (struct sockaddr_in *)da) != 0) {
         log_error("getsockopt(SO_ORIGINAL_DST) failed");
         return -1;
     }

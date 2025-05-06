@@ -85,3 +85,4 @@ int create_udp_listener(short port);
 
 int get_opts_server(int argc, char *argv[], server_parameters_t *paras); 
 
+int get_original_dest_addr(int fd, struct sockaddr_in *s);
