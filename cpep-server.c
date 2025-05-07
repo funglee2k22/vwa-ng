@@ -68,7 +68,8 @@ static void ctrl_stream_on_receive(quicly_stream_t *stream, size_t off, const vo
 void *handle_isp_server(void *data)
 {
     quicly_conn_t *quic_conn = ((worker_data_t *) data)->conn;
-    quicly_stream_t *quic_stream = ((worker_data_t *) data)->stream;
+    quicly_stream_t *quic_stream = ((worker_data_t *) data)->stream; 
+    long stream_id = quic_stream -> stream_id;
     int tcp_fd = ((worker_data_t *) data)->tcp_fd;
 
     log_debug("worker: %ld handles tcp: %d -> stream: %ld\n", pthread_self(), tcp_fd, quic_stream->stream_id);
@@ -82,7 +83,7 @@ void *handle_isp_server(void *data)
         } while (select(tcp_fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(tcp_fd, &readfds)) {
-            char buff[4096];
+            char buff[409600];
             int bytes_received = read(tcp_fd, buff, sizeof(buff));
 
             if (bytes_received < 0) {
@@ -96,7 +97,14 @@ void *handle_isp_server(void *data)
                 break;
             }
 
-            log_debug("[tcp: %d -> stream: %ld], received \n %.*s \n", tcp_fd, quic_stream->stream_id, bytes_received,  buff);
+            log_debug("[tcp: %d -> stream: %ld], received %d bytes \n", tcp_fd, quic_stream->stream_id, bytes_received);
+            //log_debug("[tcp: %d -> stream: %ld], received %d bytes msg: %.*s \n", tcp_fd,
+	    //                      quic_stream->stream_id, bytes_received, bytes_received, buff);
+	    if (!quic_stream) { 
+		log_error("[tcp: %d -> stream: %ld ] failed to write, stream %p has been closed.\n", 
+				 tcp_fd, stream_id, quic_stream);
+		break;
+	    }
 
             if (!quicly_sendstate_is_open(&quic_stream->sendstate) && (bytes_received > 0))
                 quicly_get_or_open_stream(quic_stream->conn, quic_stream->stream_id, &quic_stream);
@@ -322,8 +330,9 @@ void run_server_loop(int quic_srv_fd)
 
         /* send QUIC packets, if any */
         for (size_t i = 0; conns[i] != NULL; ++i) {
-            if (!send_pending(server_ctx, quic_srv_fd, conns[i])) {
-                log_error("sending quic dgrams failed with error.");
+	    int ret = send_pending(server_ctx, quic_srv_fd, conns[i]);
+            if (ret != 0) {
+                log_error("sending quic dgrams failed on udp socket %d with errori ret = %d.\n", quic_srv_fd, ret);
                 continue;
             }
         } /* End of for (size_t i = 0; conns[i] != NULL; ++i) */
