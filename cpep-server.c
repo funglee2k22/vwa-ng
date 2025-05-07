@@ -127,7 +127,7 @@ error:
     remove_stream_ht(quic_stream->stream_id);
     close(tcp_fd);
     //TODO close QUIC stream also
-    quily_streambuf_egress_shutdown(quic_stream);
+    //quicly_streambuf_egress_shutdown(quic_stream);
     return NULL;
 }
 
@@ -208,8 +208,8 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
             close(tcp_fd);
             return;
         }
-        log_debug("[stream: %ld -> tcp: %d], sent bytes: %zu,  msg: \n %.*s \n", stream->stream_id, tcp_fd, i
-                        bytes_sent, (int) bytes_sent, buff_base);
+        log_debug("[stream: %ld -> tcp: %d], sent bytes: %zu,  msg: \n %.*s \n", stream->stream_id, tcp_fd, 
+                        bytes_sent, (int) bytes_sent, (char *) buff_base);
     }
 
     return;
