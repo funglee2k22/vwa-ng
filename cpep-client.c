@@ -36,7 +36,7 @@ stream_to_tcp_map_node_t *stream_to_tcp_map = NULL;  //used to lookup tcp fd by 
 static void client_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
 
-    log_debug("stream: %ld on_receive cb is called\n", stream->stream_id);
+    log_debug("stream: %ld on_receive cb (len: %ld) is called\n", stream->stream_id, len);
 
     /* read input to receive buffer */
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
@@ -48,9 +48,10 @@ static void client_on_receive(quicly_stream_t *stream, size_t off, const void *s
 
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
+    
+    char buff[4096000];
+    memcpy(buff, input.base, input.len);
 
-    char buff[4096];
-    memcpy(buff, input.base, len);
     int tcp_fd = find_tcp_by_stream_id(stream->stream_id);
 
     if (tcp_fd < 0) {
@@ -58,18 +59,19 @@ static void client_on_receive(quicly_stream_t *stream, size_t off, const void *s
         return;
     }
 
-    size_t bytes_sent = send(tcp_fd, buff, len, 0);
+    size_t bytes_sent = send(tcp_fd, buff, input.len, 0);
     if (bytes_sent == -1) {
         log_error("[stream: %ld -> tcp: %d], tcp send() failed\n", stream->stream_id, tcp_fd);
         return;
     }
 
-    log_debug("[stream: %ld -> tcp: %d], bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);
+    log_info("[stream: %ld -> tcp: %d], bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);
 
     /* initiate connection close after receiving all data */
     if (quicly_recvstate_transfer_complete(&stream->recvstate)) { 
-        log_info("stream: %ld received all data, and calling quicly_close()\n", stream->stream_id);
+        log_error("stream: %ld received all data, and calling quicly_close()\n", stream->stream_id);
         quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
+	fprintf(stderr, "should we close connection here ? \n");
     }
 
     return;
@@ -228,11 +230,13 @@ void *tcp_socket_handler(void *data)
                 break;
             }
 
-            if (bytes_received == 0)
-                continue;
+            if (bytes_received == 0) { 
+		log_warn("TCP sk [%d] read EOF.\n", fd);
+                break;		
+	    }
 
-            log_debug("tcp: %d -> stream: %ld, read %d bytes, content:  \n%.*s\n",
-                        fd, stream->stream_id, bytes_received, bytes_received, buff);
+            //log_debug("tcp: %d -> stream: %ld, read %d bytes, content:  \n%.*s\n",
+            //           fd, stream->stream_id, bytes_received, bytes_received, buff);
 
             if (quicly_write_msg_to_buff(stream, buff, bytes_received) != 0) {
                 log_error("quicly_write_msg_to_buff() failed.\n");
