@@ -127,6 +127,7 @@ error:
     remove_stream_ht(quic_stream->stream_id);
     close(tcp_fd);
     //TODO close QUIC stream also
+    quily_streambuf_egress_shutdown(quic_stream);
     return NULL;
 }
 
@@ -207,8 +208,8 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
             close(tcp_fd);
             return;
         }
-        log_debug("[stream: %ld -> tcp: %d], bytes: %zu sent\n", stream->stream_id, tcp_fd, bytes_sent);
-        log_debug("[stream: %ld -> tcp: %d], msg: %.*s sent\n", stream->stream_id, tcp_fd, (int) bytes_sent, (char *) buff_base);
+        log_debug("[stream: %ld -> tcp: %d], sent bytes: %zu,  msg: \n %.*s \n", stream->stream_id, tcp_fd, i
+                        bytes_sent, (int) bytes_sent, buff_base);
     }
 
     return;
@@ -254,7 +255,7 @@ static quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_s
 
     stream->callbacks = &stream_callbacks;
 
-    log_info("stream: %ld is openned.\n", stream->stream_id);
+    log_debug("stream: %ld is openned.\n", stream->stream_id);
 
     return ret;
 }
@@ -321,39 +322,16 @@ void run_server_loop(int quic_srv_fd)
 
         /* send QUIC packets, if any */
         for (size_t i = 0; conns[i] != NULL; ++i) {
-            quicly_address_t dest, src;
-            struct iovec dgrams[10];
-            uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * server_ctx.transport_params.max_udp_payload_size];
-            size_t num_dgrams = PTLS_ELEMENTSOF(dgrams);
-            int ret = quicly_send(conns[i], &dest, &src, dgrams, &num_dgrams, dgrams_buf, sizeof(dgrams_buf));
-
-            switch (ret) {
-            case 0: {
-                size_t j;
-                for (j = 0; j != num_dgrams; ++j) {
-                    struct msghdr mess = {.msg_name = &dest.sa, .msg_namelen = quicly_get_socklen(&dest.sa),
-                                          .msg_iov = &dgrams[j], .msg_iovlen = 1};
-                    sendmsg(quic_srv_fd, &mess, MSG_DONTWAIT);
-                }
-                break;
-            }
-            case QUICLY_ERROR_FREE_CONNECTION:
-                log_debug("free connection\n");
-                quicly_free(conns[i]);
-                conns[i] = NULL;
-                break;
-            default:
-                log_debug("quicly_send returned with error %d\n", ret);
-                goto error;
+            if (!send_pending(server_ctx, quic_srv_fd, conns[i])) {
+                log_error("sending quic dgrams failed with error.");
+                continue;
             }
         } /* End of for (size_t i = 0; conns[i] != NULL; ++i) */
 
     } /* End of While loop */
 
 error:
-
     close(quic_srv_fd);
-
 }
 
 void  setup_quicly_ctx(const char *cert, const char *key, const char *logfile)

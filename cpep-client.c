@@ -280,7 +280,7 @@ void *udp_socket_handler(void *data)
 #endif
         }
     
-        int ret = send_quic_dgrams(client_ctx, quic_fd, conn);
+        int ret = send_pending(client_ctx, quic_fd, conn);
         if (ret != 0)
             log_error("sending quic dgrams failed with error %d", ret);
 
@@ -306,12 +306,14 @@ void run_client_loop(int tcp_fd, quicly_conn_t *conn)
             break;
         }
 
-        struct sockaddr_in tcp_orig_addr;
-        get_original_dest_addr(client_fd, &tcp_orig_addr);
+        struct sockaddr_in tcp_orig_addr, *dst;
+	dst = (struct sockaddr_in *) & tcp_orig_addr;
+        get_original_dest_addr(client_fd, dst);
+        
 
         log_info("accepted a new TCP [%d] connection [%s:%d --> %s:%d\n", client_fd,
             inet_ntoa(tcp_remote_addr.sin_addr), ntohs(tcp_remote_addr.sin_port),
-            inet_ntoa(tcp_orig_addr.sin_addr), ntohs(tcp_orig_addr.sin_port));
+            inet_ntoa(dst->sin_addr), ntohs(dst->sin_port));
 
         quicly_stream_t *nstream = NULL;
         if ((ret = quicly_open_stream(conn, &nstream, 0)) != 0) {

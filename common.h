@@ -75,7 +75,7 @@ int create_tcp_listener(short port);
 
 int create_udp_client_socket(char *hostname, short port);
 
-int send_quic_dgrams(quicly_context_t ctx, int fd, quicly_conn_t *conn);
+int send_pending(quicly_context_t ctx, int fd, quicly_conn_t *conn);
 
 bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num_dgrams);
 

@@ -50,32 +50,19 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     return;
 }
 
-
-int find_tcp_conn(conn_stream_pair_node_t *head, quicly_stream_t *stream)
-{
-    conn_stream_pair_node_t *p = head;
-    int i = 0;
-    while (p) {
-        if (p->stream == stream)
-            return p->fd;
-    i++;
-    p = p->next;
-    }
-    return -1;
-}
-
 int create_tcp_connection(struct sockaddr *sa)
 {
     int fd;
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        log_debug("socket failed");
+        log_error("socket failed %d, %s", errno, strerror(errno));
         return -1;
     }
 
     if (connect(fd, sa, sizeof(struct sockaddr)) == -1) {
-        log_debug("connect with %s:%dfailed",
+        log_error("connect with %s:%d failed, %d, %s\n",
                 inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
-                ntohs(((struct sockaddr_in *)sa)->sin_port));
+                ntohs(((struct sockaddr_in *)sa)->sin_port),
+                errno, strerror(errno));
         close(fd);
         return -1;
     }
@@ -93,7 +80,7 @@ int create_tcp_listener(short port)
     struct sockaddr_in sa;
 
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        log_error("socket failed");
+        log_error("socket failed with %d, %s", errno, strerror(errno));
         return -1;
     }
 #if 0
@@ -104,7 +91,7 @@ int create_tcp_listener(short port)
 #endif
 
     if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &(int){1}, sizeof(int)) != 0) {
-        log_error("setsockopt(IP_TRANSPARENT) failed");
+        log_error("setsockopt(IP_TRANSPARENT) failed with %d, %s", errno, strerror(errno));
         return -1;
     }
 
@@ -114,12 +101,12 @@ int create_tcp_listener(short port)
     sa.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(fd, (void *)&sa, sizeof(sa)) != 0) {
-        log_error("bind failed");
+        log_error("bind socket %d failed with %d, %s", fd, errno, strerror(errno));
         return -1;
     }
 
     if (listen(fd, 128) != 0) {
-        log_error("listen failed");
+        log_error("set socket %d listen failed with %d, %s", fd, errno, strerror(errno));
         return -1;
     }
 
@@ -133,7 +120,7 @@ int create_udp_listener(short port)
     int reuseaddr = 1;
 
     if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
-        log_error("socket failed");
+        log_error("udp socket create failed with %d, %s", errno, strerror(errno));
         return -1;
     }
 
@@ -142,13 +129,17 @@ int create_udp_listener(short port)
     sa.sin_port = htons(port);
     sa.sin_addr.s_addr = htonl(INADDR_ANY);
 
+#if 0
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof(reuseaddr)) != 0) {
-        log_error("setsockopt(SO_REUSEADDR) failed");
+        log_error("udp socket %d setsockopt(SO_REUSEADDR) failed with %d, %s", fd, errno, strerror(errno));
+        close(fd);
         return -1;
     }
+#endif
 
     if (bind(fd, (void *)&sa, sizeof(sa)) != 0) {
-        log_error("bind failed");
+        log_error("udp socket %d bind failed with %d, %s", fd, errno, strerror(errno));
+        close(fd);
         return -1;
     }
 
@@ -162,12 +153,12 @@ int create_udp_client_socket(char *hostname, short port)
     struct hostent *hp;
 
     if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
-        log_error("socket failed");
+        log_error("create udp socket failed with %d, %s", errno, strerror(errno));
         return -1;
     }
 
     if ((hp = gethostbyname(hostname)) == NULL) {
-        log_error("gethostbyname failed");
+        log_error("gethostbyname (%s) failed with %d, %s", hostname, errno, strerror(errno));
         return -1;
     }
 
@@ -177,7 +168,8 @@ int create_udp_client_socket(char *hostname, short port)
     memcpy(&sa.sin_addr, hp->h_addr, hp->h_length);
 
     if (connect(fd, (struct sockaddr *)&sa, sizeof(sa)) != 0) {
-        log_error("connect failed");
+        log_error("udp socket %d connect failed with %d, %s", fd, errno, strerror(errno));
+        close(fd);
         return -1;
     }
 
@@ -194,30 +186,38 @@ int get_original_dest_addr(int fd, struct sockaddr_in *sa)
 #endif
 
     if (getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, sa, &salen) != 0) {
-        log_error("getsockopt(SO_ORIGINAL_DST) failed");
+        log_error("getsockopt(SO_ORIGINAL_DST) on socket %d failed with %d, %s", fd, errno, strerror(errno));
         return -1;
     }
 
-    return 0;
-}
-
-int get_original_addr(int fd, struct sockaddr_in *sa, struct sockaddr_in *da)
-{
-    socklen_t salen = sizeof(*sa);
-    if (get_original_dest_addr(fd, (struct sockaddr_in *)da) != 0) {
-        log_error("getsockopt(SO_ORIGINAL_DST) failed");
-        return -1;
-    }
-
-    if (getpeername(fd, (struct sockaddr *)sa, &salen) != 0) {
-        log_error("getsockname failed");
-        return -1;
-    }
-    
     return 0;
 } 
 
 
+int send_pending(quicly_context_t ctx, int fd, quicly_conn_t *conn)
+{
+    quicly_address_t dest, src;
+    struct iovec dgrams[16];
+    uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * ctx.transport_params.max_udp_payload_size];
+    size_t num_dgrams = PTLS_ELEMENTSOF(dgrams);
+
+    int ret = quicly_send(conn, &dest, &src, dgrams, &num_dgrams, dgrams_buf, sizeof(dgrams_buf));
+
+    if (ret == 0 && num_dgrams > 0) {
+        //someting to send;
+        if (!send_dgrams_default(fd, &dest.sa, dgrams, num_dgrams)) {
+            log_error("send_dgrams failed");
+            return -1;
+        }
+    } else if (ret == QUICLY_ERROR_FREE_CONNECTION) {
+        log_error("ret: %d, connection closed.\n", ret);
+    } else if (ret == 0 && num_dgrams == 0) {
+        log_debug("ret: %d, nums_dgrams: %ld, nothing to send.\n", ret, num_dgrams);
+    } else {
+        log_error("ret: %d.", ret);
+    }
+    return ret;
+}
 
 bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num_dgrams)
 {
@@ -260,7 +260,12 @@ bool send_dgrams(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num
     }
 
     return true;
-}
+} 
+
+/* 
+ * Hash table streamid : tcp fd related. 
+ * Note: all ht related funtions are using extern variable stream_to_tcp_map
+ */
 
 void remove_stream_ht(long int stream_id)
 {
@@ -271,27 +276,6 @@ void remove_stream_ht(long int stream_id)
 
     if (s) {
         HASH_DEL(stream_to_tcp_map, s);
-    }
-
-    return;
-}
-
-
-void update_stream_tcp_conn_maps(int fd, long int stream_id)
-{
-    stream_to_tcp_map_node_t *s;
-    extern stream_to_tcp_map_node_t *stream_to_tcp_map;
-
-    HASH_FIND_INT(stream_to_tcp_map, &(stream_id), s);
-    if (s == NULL) {
-        s = (stream_to_tcp_map_node_t *)malloc(sizeof(stream_to_tcp_map_node_t));
-        s->stream_id = stream_id;
-        s->fd = fd;
-        HASH_ADD_INT(stream_to_tcp_map, stream_id, s);
-	log_info("update ht %p hash [%ld] -> %d\n", stream_to_tcp_map, s->stream_id, s->fd);
-    } else {
-        s->fd = fd;
-        log_warn("stream_to_tcp_map updated <stream: %ld -> TCP: %d >.\n", stream_id, fd);
     }
 
     return;
@@ -326,32 +310,7 @@ int find_tcp_by_stream_id(long int stream_id)
     }
 
     return s->fd;
-}
+} 
 
-int send_quic_dgrams(quicly_context_t ctx, int fd, quicly_conn_t *conn)
-{
-    quicly_address_t dest, src;
-    struct iovec dgrams[10];
-    uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * ctx.transport_params.max_udp_payload_size];
-    size_t num_dgrams = PTLS_ELEMENTSOF(dgrams);
 
-    int ret = quicly_send(conn, &dest, &src, dgrams, &num_dgrams, dgrams_buf, sizeof(dgrams_buf));
 
-    if (ret == 0 && num_dgrams > 0) {
-        //someting to send;
-        size_t j;
-        for (j = 0; j != num_dgrams; ++j) {
-            struct msghdr mess = {.msg_name = &dest.sa, .msg_namelen = quicly_get_socklen(&dest.sa),
-                                  .msg_iov = &dgrams[j], .msg_iovlen = 1};
-            sendmsg(fd, &mess, MSG_DONTWAIT);
-            log_debug("sent %ld bytes message to quic server.\n", dgrams[j].iov_len);
-        }
-    } else if (ret == QUICLY_ERROR_FREE_CONNECTION) {
-        log_error("ret: %d, connection closed.\n", ret);
-    } else if (ret == 0 && num_dgrams == 0) {
-        log_debug("ret: %d, nums_dgrams: %ld, nothing to send.\n", ret, num_dgrams);
-    } else {
-        log_error("ret: %d.", ret);
-    }
-    return ret;
-}
