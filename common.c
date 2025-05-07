@@ -206,15 +206,15 @@ int send_pending(quicly_context_t ctx, int fd, quicly_conn_t *conn)
     if (ret == 0 && num_dgrams > 0) {
         //someting to send;
         if (!send_dgrams_default(fd, &dest.sa, dgrams, num_dgrams)) {
-            log_error("send_dgrams failed");
+            log_error("send_dgrams failed\n");
             return -1;
         }
     } else if (ret == QUICLY_ERROR_FREE_CONNECTION) {
         log_error("ret: %d, connection closed.\n", ret);
     } else if (ret == 0 && num_dgrams == 0) {
-        log_debug("ret: %d, nums_dgrams: %ld, nothing to send.\n", ret, num_dgrams);
+        log_warn("ret: %d, nums_dgrams: %ld, nothing to send.\n", ret, num_dgrams);
     } else {
-        log_error("ret: %d.", ret);
+        log_error("ret: %d, udp socket %d called quicly_send() with error.\n", ret, fd);
     }
     return ret;
 }
