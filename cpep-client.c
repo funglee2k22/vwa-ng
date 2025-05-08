@@ -65,7 +65,7 @@ static void client_on_receive(quicly_stream_t *stream, size_t off, const void *s
         return;
     }
 
-    log_info("[stream: %ld -> tcp: %d], bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);
+    log_debug("[stream: %ld -> tcp: %d], bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);
 
     /* initiate connection close after receiving all data */
     if (quicly_recvstate_transfer_complete(&stream->recvstate)) { 
@@ -187,7 +187,7 @@ int quicly_write_msg_to_buff(quicly_stream_t *stream, void *buf, size_t len)
 
 int read_ingress_udp_message(int fd, quicly_conn_t *conn)
 {
-    uint8_t buf[4096000];
+    char buf[4096000];
     struct sockaddr_storage sa;
     struct iovec vec = {.iov_base = buf, .iov_len = sizeof(buf)};
     struct msghdr msg = {.msg_name = &sa, .msg_namelen = sizeof(sa), .msg_iov = &vec, .msg_iovlen = 1};
@@ -210,12 +210,12 @@ void *tcp_socket_handler(void *data)
     int fd = worker->tcp_fd;
     quicly_stream_t *stream = worker->stream;
 
-    log_info("starting TCP socket handler thread %ld [tcp: %d <-> stream: %ld].\n", 
+    log_debug("starting TCP socket handler thread %ld [tcp: %d <-> stream: %ld].\n", 
                     pthread_self(), fd, stream->stream_id);
     
     while (1) {
         fd_set readfds;
-        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 0, .tv_usec = 10000};
 
         do {
             FD_ZERO(&readfds);
@@ -226,7 +226,7 @@ void *tcp_socket_handler(void *data)
             char buff[4096000];
             int bytes_received = read(fd, buff, sizeof(buff));
             if (bytes_received < 0) {
-                log_error("TCP sk [%d] read error.\n", fd);
+                log_error("TCP sk [%d] read error %d.\n", fd, bytes_received);
                 break;
             }
 
@@ -247,7 +247,7 @@ void *tcp_socket_handler(void *data)
         }
     }
 cleanup:
-    log_info("closing [tcp: %d <-> stream: %ld...\n", fd, stream->stream_id);
+    log_error("closing [tcp: %d <-> stream: %ld...\n", fd, stream->stream_id);
     remove_stream_ht(stream->stream_id);
     //free(stream);
     close(fd);
@@ -263,7 +263,7 @@ void *udp_socket_handler(void *data)
     log_info("starting UDP socket handler %ld for quic_fd: %d...\n", pthread_self(), quic_fd);
 
     while (1) {
-        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 0, .tv_usec = 10000};
         fd_set readfds;
 
         do {

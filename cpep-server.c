@@ -317,7 +317,7 @@ void run_server_loop(int quic_srv_fd)
 
         if (FD_ISSET(quic_srv_fd, &readfds)) {
             //TODO this could be a function
-            uint8_t buf[409600];
+            char buf[409600];
             struct sockaddr_storage sa;
             struct iovec vec = {.iov_base = buf, .iov_len = sizeof(buf)};
             struct msghdr msg = {.msg_name = &sa, .msg_namelen = sizeof(sa), .msg_iov = &vec, .msg_iovlen = 1};
