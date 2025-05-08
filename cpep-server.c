@@ -112,6 +112,7 @@ void *handle_isp_server(void *data)
             if (quic_stream && quicly_sendstate_is_open(&quic_stream->sendstate) && (bytes_received > 0)) {
 
                 quicly_streambuf_egress_write(quic_stream, buff, bytes_received);
+
                 /* shutdown the stream after sending all data */
                 if (quicly_recvstate_transfer_complete(&quic_stream->recvstate))
                     quicly_streambuf_egress_shutdown(quic_stream);
@@ -314,7 +315,7 @@ void run_server_loop(int quic_srv_fd)
 
         if (FD_ISSET(quic_srv_fd, &readfds)) {
             //TODO this could be a function
-            uint8_t buf[4096];
+            uint8_t buf[409600];
             struct sockaddr_storage sa;
             struct iovec vec = {.iov_base = buf, .iov_len = sizeof(buf)};
             struct msghdr msg = {.msg_name = &sa, .msg_namelen = sizeof(sa), .msg_iov = &vec, .msg_iovlen = 1};

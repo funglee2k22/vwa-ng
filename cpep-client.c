@@ -187,7 +187,7 @@ int quicly_write_msg_to_buff(quicly_stream_t *stream, void *buf, size_t len)
 
 int read_ingress_udp_message(int fd, quicly_conn_t *conn)
 {
-    uint8_t buf[4096];
+    uint8_t buf[4096000];
     struct sockaddr_storage sa;
     struct iovec vec = {.iov_base = buf, .iov_len = sizeof(buf)};
     struct msghdr msg = {.msg_name = &sa, .msg_namelen = sizeof(sa), .msg_iov = &vec, .msg_iovlen = 1};
@@ -223,7 +223,7 @@ void *tcp_socket_handler(void *data)
         } while (select(fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(fd, &readfds)) {
-            char buff[4096];
+            char buff[4096000];
             int bytes_received = read(fd, buff, sizeof(buff));
             if (bytes_received < 0) {
                 log_error("TCP sk [%d] read error.\n", fd);
