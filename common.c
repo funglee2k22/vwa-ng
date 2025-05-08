@@ -46,6 +46,7 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     char time_string[256];
     strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
     fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
+    fflush(stdout);
 #endif
     return;
 }

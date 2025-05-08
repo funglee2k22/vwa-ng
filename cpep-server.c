@@ -76,7 +76,7 @@ void *handle_isp_server(void *data)
 
     while (1) {
         fd_set readfds;
-        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 0, .tv_usec = 10000};
         do {
             FD_ZERO(&readfds);
             FD_SET(tcp_fd, &readfds);
@@ -132,10 +132,8 @@ void *handle_isp_server(void *data)
     }
 
 error:
-   
     remove_stream_ht(quic_stream->stream_id);
     close(tcp_fd);
-    //TODO close QUIC stream also
     //quicly_streambuf_egress_shutdown(quic_stream);
     return NULL;
 }
@@ -143,7 +141,7 @@ error:
 static void server_on_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
 
-    log_warn("stream: %ld receive buffer.\n", stream->stream_id);
+    log_debug("stream: %ld receive buffer.\n", stream->stream_id);
 
     if (stream->stream_id == 0) {
         ctrl_stream_on_receive(stream, off, src, len);
@@ -219,6 +217,10 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
         }
         log_debug("[stream: %ld -> tcp: %d], sent bytes: %zu,  msg: \n %.*s \n", stream->stream_id, tcp_fd, 
                         bytes_sent, (int) bytes_sent, (char *) buff_base);
+    } else if (tcp_fd <= 0) { 
+
+        log_error("could not find valid tcp peer for quic stream %ld\n", stream->stream_id);
+
     }
 
     return;
@@ -305,7 +307,7 @@ void run_server_loop(int quic_srv_fd)
     log_info("starting server loop with UDP sk: %d...\n", quic_srv_fd);
 
     while (1) {
-        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 0, .tv_usec = 10000};
         fd_set readfds;
 
         do {
