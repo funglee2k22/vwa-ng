@@ -84,10 +84,10 @@ void *handle_isp_server(void *data)
 
         if (FD_ISSET(tcp_fd, &readfds)) {
             char buff[4096];
-            int bytes_received 
+            int bytes_received;
             while ((bytes_received = read(tcp_fd, buff, sizeof(buff))) > 0) { 
                 log_debug("[tcp: %d -> stream: %ld], received %d bytes msg\n", 
-                                tcp_fd, stream->stream_id, bytes_received);
+                                tcp_fd, quic_stream->stream_id, bytes_received);
  
                 if (!quicly_sendstate_is_open(&quic_stream->sendstate))
                     quicly_get_or_open_stream(quic_stream->conn, quic_stream->stream_id, &quic_stream);
