@@ -185,22 +185,73 @@ int quicly_write_msg_to_buff(quicly_stream_t *stream, void *buf, size_t len)
 }
 
 
-int read_ingress_udp_message(int fd, quicly_conn_t *conn)
+int cpep_clt_read_udp_msg(int fd, quicly_conn_t *conn)
 {
-    char buf[4096000];
+    char buf[4096];
     struct sockaddr_storage sa;
-    struct iovec vec = {.iov_base = buf, .iov_len = sizeof(buf)};
-    struct msghdr msg = {.msg_name = &sa, .msg_namelen = sizeof(sa), .msg_iov = &vec, .msg_iovlen = 1};
+    socklen_t salen = sizeof(sa);
+    quicly_decoded_packet_t decoded;
+    ssize_t bytes_received;
+ 
+    while((bytes_received = recvfrom(fd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *) &sa, &salen)) != -1) {
+        for(size_t offset = 0; offset < bytes_received; ) {
 
-    ssize_t rret;
-    while ((rret = recvmsg(fd, &msg, 0)) == -1 && errno == EINTR)
-        ;
+            size_t packet_len = quicly_decode_packet(&client_ctx, &decoded, buf, bytes_received - offset, &offset);
+            if (packet_len == SIZE_MAX) {
+                log_error("quicly_decode_packet() packet_len: %ld failed.\n", packet_len);
+                break;
+            }
 
-    log_debug("read %ld bytes data from UDP sockets [%d]\n", rret, fd);
+            int ret = quicly_receive(conn, NULL, (struct sockaddr *)&sa, &decoded);
+            
+            if (ret != 0 && ret != QUICLY_ERROR_PACKET_IGNORED) {
+                log_error("quicly_receive() failed with error %d\n", ret);
+                return -1;
+            }
 
-    if (rret > 0)
-        process_quicly_msg(fd, conn, &msg, rret);
+        }
+    }
+    
+    if(errno != EWOULDBLOCK && errno != 0) {
+        log_error("recvfrom() failed with error %d, %s \n", errno, strerror(errno));
+        perror("recvfrom() udp socket failed");
+        return -1;
+    }
 
+    return 0;
+}
+
+int cpep_clt_read_tcp_to_quic(int fd, quicly_stream_t *stream)
+{
+    uint8_t buf[4096];
+    ssize_t bytes_received;
+
+    if (fd < 0 || stream == NULL) {
+        log_error("fd: %d or stream %p is null.\n", fd, stream);
+        return -1;
+    }
+
+    while((bytes_received = recv(fd, buf, sizeof(buf), 0)) != -1) {
+        for(size_t offset = 0; offset < bytes_received; offset += bytes_received) {
+
+            if (quicly_write_msg_to_buff(stream, buf + offset, bytes_received - offset) != 0) {
+                log_error("quicly_write_msg_to_buff() failed.\n");
+                return -1;
+            }
+        }
+    } 
+
+    if (bytes_received == 0) {
+        log_error("TCP socket read EOF, should fd: %d, stream: %ld be shutdown \n", fd, stream->stream_id);
+        return -1;
+    }
+
+    if (errno != EWOULDBLOCK && errno != 0) {
+        log_error("recv() failed with error %d, \n", errno);
+        perror("recv() tcp socket failed");
+        return -1;
+    }
+    
     return 0;
 }
 
@@ -223,29 +274,13 @@ void *tcp_socket_handler(void *data)
         } while (select(fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(fd, &readfds)) {
-            char buff[4096000];
-            int bytes_received = read(fd, buff, sizeof(buff));
-            if (bytes_received < 0) {
-                log_error("TCP sk [%d] read error %d.\n", fd, bytes_received);
+            if (cpep_clt_read_tcp_to_quic(fd, stream) != 0) {
+                log_error("cpep_clt_read_tcp_to_quic() failed.\n");
                 break;
             }
-
-            if (bytes_received == 0) { 
-		log_warn("TCP sk [%d] read EOF.\n", fd);
-                break;		
-	    }
-
-            //log_debug("tcp: %d -> stream: %ld, read %d bytes, content:  \n%.*s\n",
-            //           fd, stream->stream_id, bytes_received, bytes_received, buff);
-
-            if (quicly_write_msg_to_buff(stream, buff, bytes_received) != 0) {
-                log_error("quicly_write_msg_to_buff() failed.\n");
-                break;
-            }
-
-            log_debug("[tcp: %d -> stream: %ld]  write %d bytes from tcp to quic stream egress buf.\n", fd, stream->stream_id, bytes_received);
-        }
+        } 
     }
+
 cleanup:
     log_error("closing [tcp: %d <-> stream: %ld...\n", fd, stream->stream_id);
     remove_stream_ht(stream->stream_id);
@@ -272,7 +307,9 @@ void *udp_socket_handler(void *data)
         } while (select(quic_fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(quic_fd, &readfds)) {
-            read_ingress_udp_message(quic_fd, conn);
+            if(cpep_clt_read_udp_msg(quic_fd, conn) != 0) {
+                break;
+            }
         } else {
 
 #if 0
@@ -289,6 +326,7 @@ void *udp_socket_handler(void *data)
             log_error("sending quic dgrams failed with error %d", ret);
 
     }
+    
 cleanup:
     log_debug("UDP socket handler %ld handling UDP fd %d exiting, closing...\n", pthread_self(), quic_fd);
     close(quic_fd);
