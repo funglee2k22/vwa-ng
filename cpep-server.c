@@ -65,6 +65,36 @@ static void ctrl_stream_on_receive(quicly_stream_t *stream, size_t off, const vo
     return;
 }
 
+int cpep_srv_read_tcp_to_stream(int fd, quicly_stream_t *stream)
+{
+    char buf[4096];
+    ssize_t bytes_received; 
+   
+    if (fd < 0 || stream == NULL) { 
+        log_error("invalid fd %d or stream %p.\n", fd, stream);
+        return -1;
+    }
+
+    while(bytes_received = recv(fd, buf, sizeof(buf), 0) > 0) {
+        if (stream && !quicly_sendstate_is_open(&stream->sendstate)) 
+            quicly_get_or_open_stream(stream->conn, stream->stream_id, &stream);
+        
+        if (quicly_streambuf_egress_write(stream, buf, bytes_received) != 0) {
+            log_error("stream: %ld write to stream buffer failed.\n", stream->stream_id);
+            return -1;
+        }
+
+    }
+
+    if (bytes_received == 0) { 
+        log_error("tcp connection %d closed receiving EOF.\n", fd);
+        close(fd);
+        return 0;   
+    }
+
+    return 0;
+}
+
 void *handle_isp_server(void *data)
 {
     quicly_conn_t *quic_conn = ((worker_data_t *) data)->conn;
@@ -72,7 +102,7 @@ void *handle_isp_server(void *data)
     long stream_id = quic_stream -> stream_id;
     int tcp_fd = ((worker_data_t *) data)->tcp_fd;
 
-    log_debug("worker: %ld handles tcp: %d -> stream: %ld\n", pthread_self(), tcp_fd, quic_stream->stream_id);
+    //log_debug("worker: %ld handles tcp: %d -> stream: %ld\n", pthread_self(), tcp_fd, quic_stream->stream_id);
 
     while (1) {
         fd_set readfds;
@@ -83,55 +113,15 @@ void *handle_isp_server(void *data)
         } while (select(tcp_fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(tcp_fd, &readfds)) {
-            char buff[409600];
-            int bytes_received = read(tcp_fd, buff, sizeof(buff));
-
-            if (bytes_received < 0) {
-                log_error("[tcp: %d -> stream: %ld] tcp side read error %d, %s.\n",
-                    tcp_fd, quic_stream->stream_id, errno, strerror(errno));
-                break;
-            }
-
-            if (bytes_received == 0) {
-                log_warn("[tcp: %d -> stream: %ld] tcp side read EOF.\n", tcp_fd, quic_stream->stream_id);
-                break;
-            }
-
-            log_debug("[tcp: %d -> stream: %ld], received %d bytes \n", tcp_fd, quic_stream->stream_id, bytes_received);
-            //log_debug("[tcp: %d -> stream: %ld], received %d bytes msg: %.*s \n", tcp_fd,
-	    //                      quic_stream->stream_id, bytes_received, bytes_received, buff);
-	    if (!quic_stream) { 
-		log_error("[tcp: %d -> stream: %ld ] failed to write, stream %p has been closed.\n", 
-				 tcp_fd, stream_id, quic_stream);
-		break;
-	    }
-
-            if (!quicly_sendstate_is_open(&quic_stream->sendstate) && (bytes_received > 0))
-                quicly_get_or_open_stream(quic_stream->conn, quic_stream->stream_id, &quic_stream);
-
-            if (quic_stream && quicly_sendstate_is_open(&quic_stream->sendstate) && (bytes_received > 0)) {
-
-                quicly_streambuf_egress_write(quic_stream, buff, bytes_received);
-
-                /* shutdown the stream after sending all data */
-                if (quicly_recvstate_transfer_complete(&quic_stream->recvstate))
-                    quicly_streambuf_egress_shutdown(quic_stream);
-
-                log_debug("[tcp: %d -> stream: %ld] write %d bytes to quic stream: %ld.\n",
-                        tcp_fd, quic_stream->stream_id, bytes_received, quic_stream->stream_id);
-            } else {
-                if (quic_stream)
-                    log_error("[tcp: %d -> stream: %ld] quic stream is not open.\n",
-                        tcp_fd, quic_stream->stream_id);
-                else
-                    log_error("[tcp: %d -> stream: NULL] quic stream is NULL.\n",
-                        tcp_fd);
+            if( cpep_srv_read_tcp_to_stream(tcp_fd, quic_stream) != 0) {
+                //log_error("worker: %ld, failed to read from tcp fd %d.\n", pthread_self(), tcp_fd);
                 break;
             }
         }
     }
 
 error:
+
     remove_stream_ht(quic_stream->stream_id);
     close(tcp_fd);
     //quicly_streambuf_egress_shutdown(quic_stream);
@@ -169,10 +159,11 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
     log_debug("QUIC stream [%ld], %ld bytes received,\n", stream->stream_id, input.len);
 
     int tcp_fd = find_tcp_by_stream_id(stream->stream_id);
-    if (tcp_fd < 0) {
-        struct sockaddr_in orig_dst;
-        size_t addr_len = sizeof(orig_dst);
 
+    struct sockaddr_in orig_dst;
+    size_t addr_len = sizeof(orig_dst);
+
+    if (tcp_fd < 0) {
         memcpy(&orig_dst, input.base, sizeof(orig_dst));
         buff_len -= addr_len;
         buff_base += addr_len;
@@ -207,22 +198,25 @@ static void server_on_receive(quicly_stream_t *stream, size_t off, const void *s
         pthread_detach(worker_thread);
     }
 
-    if (tcp_fd > 0 && buff_len > 0) {
-        ssize_t bytes_sent = send(tcp_fd, buff_base, buff_len, 0);
-        if (bytes_sent == -1) {
-            log_error("[stream: %ld -> tcp: %d], tcp send() failed\n", stream->stream_id, tcp_fd);
-            remove_stream_ht(stream->stream_id);
-            close(tcp_fd);
-            return;
-        }
-        log_debug("[stream: %ld -> tcp: %d], sent bytes: %zu,  msg: \n %.*s \n", stream->stream_id, tcp_fd, 
-                        bytes_sent, (int) bytes_sent, (char *) buff_base);
-    } else if (tcp_fd <= 0) { 
-
-        log_error("could not find valid tcp peer for quic stream %ld\n", stream->stream_id);
-
+    if (tcp_fd <= 0) {
+        log_error("stream: %ld failed to create TCP peer to dest %s:%d.\n",
+                stream->stream_id,
+                inet_ntoa(((struct sockaddr_in *)&orig_dst)->sin_addr),
+                ntohs(((struct sockaddr_in *)&orig_dst)->sin_port));
+        return;
     }
 
+    ssize_t bytes_sent; 
+    while (bytes_sent = send(tcp_fd, buff_base, buff_len, 0) == -1)
+        ;;
+    
+    if (bytes_sent == -1) {
+        log_error("stream: %ld, tcp fd: %d send() failed\n", stream->stream_id, tcp_fd);
+        return;
+    }
+
+    log_debug("stream: %ld, tcp: %d, bytes: %ld sent\n", stream->stream_id, tcp_fd, bytes_sent);      
+    
     return;
 }
 
@@ -271,35 +265,65 @@ static quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_s
     return ret;
 }
 
-
-static void process_quicly_msg(int quic_fd, quicly_conn_t **conns, struct msghdr *msg, size_t dgram_len)
+static inline quicly_conn_t *find_conn(struct sockaddr_storage *sa, socklen_t salen, quicly_decoded_packet_t *packet)
 {
-    size_t off = 0, i;
+    return NULL;
+}
 
-    /* split UDP datagram into multiple QUIC packets */
-    while (off < dgram_len) {
-        quicly_decoded_packet_t decoded;
-        if (quicly_decode_packet(&server_ctx, &decoded, msg->msg_iov[0].iov_base, dgram_len, &off) == SIZE_MAX) {
-            return;
-        }
-
-        for (i = 0; conns[i] != NULL; ++i)
-            if (quicly_is_destination(conns[i], NULL, msg->msg_name, &decoded))
-                break;
-
-        if (conns[i] != NULL) {
-            /* let the current connection handle ingress packets */
-            log_debug("reuse the current connection.\n");
-            quicly_receive(conns[i], NULL, msg->msg_name, &decoded);
-        } else {
-            /* assume that the packet is a new connection */
-            quicly_accept(conns + i, &server_ctx, NULL, msg->msg_name, &decoded, NULL, &next_cid, NULL, NULL); 
-	    struct sockaddr_in *src = (struct sockaddr_in *) msg->msg_name; 
-            log_info("find a new connection from: %s:%d.\n", inet_ntoa(src->sin_addr), ntohs(src->sin_port));
+void inline cpep_srv_handle_packet(quicly_decoded_packet_t *packet, struct sockaddr_in *sa, socklen_t salen)
+{
+    int ret, i;
+    
+    for(i = 0; conns[i] != NULL; ++i) {
+        if(quicly_is_destination(conns[i], NULL, (struct sockaddr *) sa, packet)) {
+            break;
         }
     }
 
+    if (conns[i] == NULL) { 
+        ret = quicly_accept(conns + i, &server_ctx, 0, (struct socketaddr *) sa, packet, NULL, &next_cid, NULL, NULL);
+        if (ret != 0) {
+            log_error("failed to accept quic connection with error %d.\n", ret);
+            return;
+        }
+        log_info("find a new connection from: %s:%d.\n", inet_ntoa(sa->sin_addr), ntohs(sa->sin_port));
+        ++next_cid.master_id;
+    } else { 
+        ret = quicly_receive(conns[i], NULL, (struct sockaddr *) sa, packet);
+        if (ret != 0 && ret != QUICLY_ERROR_PACKET_IGNORED) {
+            log_error("failed to receive quic packet with error %d.\n", ret);
+            return;
+        }
+    }
     return;
+}
+
+
+int cpep_srv_read_udp(int quic_fd)
+{ 
+    char buf[4096];
+    struct sockaddr_in sa;
+    socklen_t salen = sizeof(sa);
+    quicly_decoded_packet_t packet;
+    ssize_t bytes_received;
+
+    while ((bytes_received = recvfrom(quic_fd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *)&sa, &salen)) != 1) {
+        for (size_t offset = 0; offset < bytes_received; ) { 
+            size_t packet_len = quicly_decode_packet(&server_ctx, &packet, buf, bytes_received, &offset);
+            if (packet_len == SIZE_MAX) {
+                log_error("failed to decode QUIC packet.\n");
+                break;
+            }
+            cpep_srv_handle_packet(&packet, &sa, salen);
+        }
+    }
+
+    if (errno != EWOULDBLOCK) {
+        log_error("recvfrom() failed with error (%d): %s\n", strerror(errno));
+        return -1;
+    }
+
+    return 0;
 }
 
 void run_server_loop(int quic_srv_fd)
@@ -316,33 +340,24 @@ void run_server_loop(int quic_srv_fd)
         } while (select(quic_srv_fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(quic_srv_fd, &readfds)) {
-            //TODO this could be a function
-            char buf[409600];
-            struct sockaddr_storage sa;
-            struct iovec vec = {.iov_base = buf, .iov_len = sizeof(buf)};
-            struct msghdr msg = {.msg_name = &sa, .msg_namelen = sizeof(sa), .msg_iov = &vec, .msg_iovlen = 1};
-            ssize_t rret;
-            while ((rret = recvmsg(quic_srv_fd, &msg, 0)) == -1 && errno == EINTR)
-                ;
-            log_debug("read %ld bytes data from UDP sockets [%d]\n", rret, quic_srv_fd);
-            if (rret > 0)
-                process_quicly_msg(quic_srv_fd, conns, &msg, rret);
-        } else {
-            log_debug("no data from UDP socket, idling\n");
+            if (qpep_srv_read_udp(quic_srv_fd, conns) != 0) {
+                log_error("failed to read from UDP socket %d.\n", quic_srv_fd);
+                continue;
+            }            
         }
 
         /* send QUIC packets, if any */
         for (size_t i = 0; conns[i] != NULL; ++i) {
-	    int ret = send_pending(server_ctx, quic_srv_fd, conns[i]);
+	        int ret = send_pending(server_ctx, quic_srv_fd, conns[i]);
             if (ret != 0) {
                 log_error("sending quic dgrams failed on udp socket %d with errori ret = %d.\n", quic_srv_fd, ret);
                 continue;
             }
-        } /* End of for (size_t i = 0; conns[i] != NULL; ++i) */
-
+        } 
     } /* End of While loop */
 
 error:
+    log_error("server loop exiting.\n");
     close(quic_srv_fd);
 }
 
