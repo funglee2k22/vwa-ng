@@ -83,8 +83,19 @@ void *handle_isp_server(void *data)
         } while (select(tcp_fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(tcp_fd, &readfds)) {
-            char buff[409600];
-            int bytes_received = read(tcp_fd, buff, sizeof(buff));
+            char buff[4096];
+            int bytes_received 
+            while ((bytes_received = read(tcp_fd, buff, sizeof(buff))) > 0) { 
+                log_debug("[tcp: %d -> stream: %ld], received %d bytes msg\n", 
+                                tcp_fd, stream->stream_id, bytes_received);
+ 
+                if (!quicly_sendstate_is_open(&quic_stream->sendstate))
+                    quicly_get_or_open_stream(quic_stream->conn, quic_stream->stream_id, &quic_stream);
+                quicly_streambuf_egress_write(quic_stream, buff, bytes_received);
+
+                log_debug("[tcp: %d -> stream: %ld] write %d bytes to quic stream: %ld.\n",
+                        tcp_fd, quic_stream->stream_id, bytes_received, quic_stream->stream_id);
+            }
 
             if (bytes_received < 0) {
                 log_error("[tcp: %d -> stream: %ld] tcp side read error %d, %s.\n",
@@ -96,39 +107,8 @@ void *handle_isp_server(void *data)
                 log_warn("[tcp: %d -> stream: %ld] tcp side read EOF.\n", tcp_fd, quic_stream->stream_id);
                 break;
             }
-
-            log_debug("[tcp: %d -> stream: %ld], received %d bytes \n", tcp_fd, quic_stream->stream_id, bytes_received);
-            //log_debug("[tcp: %d -> stream: %ld], received %d bytes msg: %.*s \n", tcp_fd,
-	    //                      quic_stream->stream_id, bytes_received, bytes_received, buff);
-	    if (!quic_stream) { 
-		log_error("[tcp: %d -> stream: %ld ] failed to write, stream %p has been closed.\n", 
-				 tcp_fd, stream_id, quic_stream);
-		break;
-	    }
-
-            if (!quicly_sendstate_is_open(&quic_stream->sendstate) && (bytes_received > 0))
-                quicly_get_or_open_stream(quic_stream->conn, quic_stream->stream_id, &quic_stream);
-
-            if (quic_stream && quicly_sendstate_is_open(&quic_stream->sendstate) && (bytes_received > 0)) {
-
-                quicly_streambuf_egress_write(quic_stream, buff, bytes_received);
-
-                /* shutdown the stream after sending all data */
-                if (quicly_recvstate_transfer_complete(&quic_stream->recvstate))
-                    quicly_streambuf_egress_shutdown(quic_stream);
-
-                log_debug("[tcp: %d -> stream: %ld] write %d bytes to quic stream: %ld.\n",
-                        tcp_fd, quic_stream->stream_id, bytes_received, quic_stream->stream_id);
-            } else {
-                if (quic_stream)
-                    log_error("[tcp: %d -> stream: %ld] quic stream is not open.\n",
-                        tcp_fd, quic_stream->stream_id);
-                else
-                    log_error("[tcp: %d -> stream: NULL] quic stream is NULL.\n",
-                        tcp_fd);
-                break;
-            }
         }
+
     }
 
 error:
