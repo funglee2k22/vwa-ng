@@ -270,7 +270,7 @@ static inline quicly_conn_t *find_conn(struct sockaddr_storage *sa, socklen_t sa
     return NULL;
 }
 
-void inline cpep_srv_handle_packet(quicly_decoded_packet_t *packet, struct sockaddr_in *sa, socklen_t salen)
+static void inline cpep_srv_handle_packet(quicly_decoded_packet_t *packet, struct sockaddr_in *sa, socklen_t salen)
 {
     int ret, i;
     
@@ -281,7 +281,7 @@ void inline cpep_srv_handle_packet(quicly_decoded_packet_t *packet, struct socka
     }
 
     if (conns[i] == NULL) { 
-        ret = quicly_accept(conns + i, &server_ctx, 0, (struct socketaddr *) sa, packet, NULL, &next_cid, NULL, NULL);
+        ret = quicly_accept(conns + i, &server_ctx, 0, (struct sockaddr *) sa, packet, NULL, &next_cid, NULL, NULL);
         if (ret != 0) {
             log_error("failed to accept quic connection with error %d.\n", ret);
             return;
@@ -304,22 +304,24 @@ int cpep_srv_read_udp(int quic_fd)
     char buf[4096];
     struct sockaddr_in sa;
     socklen_t salen = sizeof(sa);
+    struct iovec vec = {.iov_base = buf, .iov_len = sizeof(buf)};
+    struct msghdr msg = {.msg_name = &sa, .msg_namelen = sizeof(sa), .msg_iov = &vec, .msg_iovlen = 1}; 
     quicly_decoded_packet_t packet;
     ssize_t bytes_received;
 
-    while ((bytes_received = recvfrom(quic_fd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *)&sa, &salen)) != 1) {
+    while ((bytes_received = recvmsg(quic_fd, &msg, 0) != -1)) {
         for (size_t offset = 0; offset < bytes_received; ) { 
-            size_t packet_len = quicly_decode_packet(&server_ctx, &packet, buf, bytes_received, &offset);
+            size_t packet_len = quicly_decode_packet(&server_ctx, &packet, msg.msg_iov[0].iov_base, bytes_received, &offset);
             if (packet_len == SIZE_MAX) {
                 log_error("failed to decode QUIC packet.\n");
-                break;
+                return;
             }
             cpep_srv_handle_packet(&packet, &sa, salen);
         }
     }
 
     if (errno != EWOULDBLOCK) {
-        log_error("recvfrom() failed with error (%d): %s\n", strerror(errno));
+        log_error("recvfrom() failed with error (%d): %s\n", errno, strerror(errno));
         return -1;
     }
 
@@ -340,7 +342,7 @@ void run_server_loop(int quic_srv_fd)
         } while (select(quic_srv_fd + 1, &readfds, NULL, NULL, &tv) == -1);
 
         if (FD_ISSET(quic_srv_fd, &readfds)) {
-            if (qpep_srv_read_udp(quic_srv_fd, conns) != 0) {
+            if (cpep_srv_read_udp(quic_srv_fd) != 0) {
                 log_error("failed to read from UDP socket %d.\n", quic_srv_fd);
                 continue;
             }            
