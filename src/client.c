@@ -1,9 +1,12 @@
 #include "client.h"
 #include "client_stream.h"
 #include "common.h"
+#include <ev.h>
 
-#include <sys/ev.h>
+#include <getopt.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <quicly.h>
 #include <quicly/defaults.h>
 #include <unistd.h>
@@ -12,7 +15,6 @@
 #include <stdbool.h>
 #include <float.h>
 #include <quicly/streambuf.h>
-
 #include <picotls/../../t/util.h>
 
 static int client_socket = -1;
@@ -25,6 +27,8 @@ static int64_t connect_time = 0;
 static bool quit_after_first_byte = false;
 static ptls_iovec_t resumption_token;
 
+static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
+                                 uint64_t frame_type, const char *reason, size_t reason_len);
 
 static quicly_stream_open_t stream_open = {&client_on_stream_open};
 
@@ -109,10 +113,10 @@ static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t 
                                  uint64_t frame_type, const char *reason, size_t reason_len)
 {
     if (QUICLY_ERROR_IS_QUIC_TRANSPORT(err)) {
-        fprintf(stderr, "transport close:code=0x%" PRIx16 ";frame=%" PRIu64 ";reason=%.*s\n", QUICLY_ERROR_GET_ERROR_CODE(err),
+        fprintf(stderr, "transport close:code=0x%lx ;frame=%" PRIu64 ";reason=%.*s\n", QUICLY_ERROR_GET_ERROR_CODE(err),
                 frame_type, (int)reason_len, reason);
     } else if (QUICLY_ERROR_IS_QUIC_APPLICATION(err)) {
-        fprintf(stderr, "application close:code=0x%" PRIx16 ";reason=%.*s\n", QUICLY_ERROR_GET_ERROR_CODE(err), (int)reason_len,
+        fprintf(stderr, "application close:code=0x%lx ;reason=%.*s\n", QUICLY_ERROR_GET_ERROR_CODE(err), (int)reason_len,
                 reason);
     } else if (err == QUICLY_ERROR_RECEIVED_STATELESS_RESET) {
         fprintf(stderr, "stateless reset\n");
@@ -144,7 +148,7 @@ void on_first_byte()
     }
 }
 
-int clt_setup_quic_connection(const char *host, const char *port, const char *logfilei) 
+int clt_setup_quic_connection(const char *host, const char *port, const char *logfile) 
 {
     setup_session_cache(get_tlsctx());
     quicly_amend_ptls_context(get_tlsctx());
@@ -200,8 +204,7 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
         return 1;
     }
 
-    printf("starting client with host %s, port %s\n", host, port);
-    quit_after_first_byte = ttfb_only;
+    printf("starting pep client with host %s, port %s\n", host, port);
 
     // start time
     start_time = client_ctx.now->cb(client_ctx.now);
@@ -228,6 +231,7 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
     ev_init(&client_timeout, &client_timeout_cb);
     client_refresh_timeout();
 
+    int runtime_s = 3600;
     client_set_quit_after(runtime_s);
 
     ev_run(loop, 0);
@@ -235,3 +239,16 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
 }
 
 
+int main(int argc, char** argv)
+{
+    int port = 8443;
+    const char *host = "192.168.30.1";
+    const char *logfile = NULL;
+
+    char port_char[16];
+    snprintf(port_char, sizeof(port_char), "%d", port);
+
+    clt_setup_quic_connection(host, port_char, logfile);
+
+
+}

@@ -9,7 +9,7 @@ static int current_second = 0;
 static uint64_t bytes_received = 0;
 static ev_timer report_timer;
 static bool first_receive = true;
-static int runtime_s = 10;
+static int runtime_s = 3600;
 
 
 void format_size(char *dst, double bytes)
