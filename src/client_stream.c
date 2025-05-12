@@ -8,7 +8,6 @@
 static int current_second = 0;
 static uint64_t bytes_received = 0;
 static ev_timer report_timer;
-static bool first_receive = true;
 static int runtime_s = 3600;
 
 
@@ -46,20 +45,13 @@ static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    if(first_receive) {
-        bytes_received = 0;
-        first_receive = false;
-        ev_timer_init(&report_timer, report_cb, 1.0, 1.0);
-        ev_timer_start(ev_default_loop(0), &report_timer);
-        on_first_byte();
-    }
-
     if(len == 0) {
         return;
     }
 
     bytes_received += len;
     quicly_stream_sync_recvbuf(stream, len);
+
 }
 
 static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)

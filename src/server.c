@@ -174,7 +174,7 @@ static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t 
 static quicly_stream_open_t stream_open = {&server_on_stream_open};
 static quicly_closed_by_remote_t closed_by_remote = {&server_on_conn_close};
 
-int run_server(const char* address, const char *port, bool gso, const char *logfile, const char *cc, int iw, const char *cert, const char *key)
+int srv_setup_quic_listener(const char* address, const char *port, const char *logfile, const char *key, const char *cert)
 {
     setup_session_cache(get_tlsctx());
     quicly_amend_ptls_context(get_tlsctx());
@@ -186,17 +186,6 @@ int run_server(const char* address, const char *port, bool gso, const char *logf
     server_ctx.transport_params.max_stream_data.uni = UINT32_MAX;
     server_ctx.transport_params.max_stream_data.bidi_local = UINT32_MAX;
     server_ctx.transport_params.max_stream_data.bidi_remote = UINT32_MAX;
-    server_ctx.initcwnd_packets = iw;
-
-    if(strcmp(cc, "reno") == 0) {
-        server_ctx.init_cc = &quicly_cc_reno_init;
-    } else if(strcmp(cc, "cubic") == 0) {
-        server_ctx.init_cc = &quicly_cc_cubic_init;
-    }
-
-    if (gso) {
-        enable_gso();
-    }
 
     load_certificate_chain(server_ctx.tls, cert);
     load_private_key(server_ctx.tls, key);
@@ -217,12 +206,11 @@ int run_server(const char* address, const char *port, bool gso, const char *logf
         return 1;
     }
 
-    if (logfile)
-    {
+    if (logfile) {
         setup_log_event(server_ctx.tls, logfile);
     }
 
-    printf("starting server with pid %" PRIu64 ",address %s, port %s, cc %s, iw %i\n", get_current_pid(),address, port, cc, iw);
+    printf("starting server with pid %" PRIu64 ", address %s, port %s\n", get_current_pid(), address, port);
 
     ev_io socket_watcher;
     ev_io_init(&socket_watcher, &server_read_cb, server_socket, EV_READ);
@@ -231,6 +219,21 @@ int run_server(const char* address, const char *port, bool gso, const char *logf
     ev_init(&server_timeout, &server_timeout_cb);
 
     ev_run(loop, 0);
+
     return 0;
 }
 
+int main(int argc, char** argv)
+{
+    int port = 8443;
+    const char *address = "127.0.0.1";
+    const char *logfile = NULL;
+    const char *keyfile = "server.key";
+    const char *certfile = "server.crt";
+
+    char port_char[16];
+    snprintf(port_char, sizeof(port_char), "%d", port);
+
+    srv_setup_quic_listener(address, port_char, logfile, keyfile, certfile);
+
+}

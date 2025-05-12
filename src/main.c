@@ -6,6 +6,33 @@
 #include "server.h"
 #include "client.h"
 
+
+static void usage(const char *cmd)
+{
+    printf("Usage: %s [options]\n"
+            "\n"
+            "Options:\n"
+            "  -c target            run as client and connect to target server\n"
+            "  --cc [reno,cubic]    congestion control algorithm to use (default reno)\n"
+            "  -e                   measure time for connection establishment and first byte only\n"
+            "  -g                   enable UDP generic segmentation offload\n"
+            "  --iw initial-window  initial window to use (default 10)\n"
+            "  -l log-file          file to log tls secrets\n"
+            "  -p                   port to listen on/connect to (default 18080)\n"
+            "  -s  address          listen as server on address\n"
+            "  -t time (s)          run for X seconds (default 10s)\n"
+            "  -h                   print this help\n"
+            "\n",
+           cmd);
+}
+
+static struct option long_options[] = 
+{
+    {"cc", required_argument, NULL, 0},
+    {"iw", required_argument, NULL, 1},
+    {NULL, 0, NULL, 0}
+};
+
 int main(int argc, char** argv)
 {
     int port = 18080;
@@ -20,11 +47,76 @@ int main(int argc, char** argv)
     const char *cc = "reno";
     int iw = 10;
 
+    while ((ch = getopt_long(argc, argv, "c:egl:p:s:t:h", long_options, NULL)) != -1) {
+        switch (ch) {
+        case 0:
+            if(strcmp(optarg, "reno") != 0 && strcmp(optarg, "cubic") != 0) {
+                fprintf(stderr, "invalid argument passed to --cc\n");
+                exit(1);
+            }
+            cc = optarg;
+            break;
+        case 1:
+            iw = (intptr_t)optarg;
+            if (sscanf(optarg, "%" SCNu32, &iw) != 1) {
+                fprintf(stderr, "invalid argument passed to --iw\n");
+                exit(1);
+            }
+            break;
+        case 'c':
+            host = optarg;
+            break;
+        case 'e':
+            ttfb_only = true;
+            break;
+        case 'g':
+            #ifdef __linux__
+                gso = true;
+                printf("using UDP GSO, requires kernel >= 4.18\n");
+            #else
+                fprintf(stderr, "UDP GSO only supported on linux\n");
+                exit(1);
+            #endif
+            break;
+        case 'l':
+            logfile = optarg;
+            break;
+        case 'p':
+            if(sscanf(optarg, "%u", &port) < 0 || port > 65535) {
+                fprintf(stderr, "invalid argument passed to -p\n");
+                exit(1);
+            }
+            break;
+        case 's':
+            address = optarg;
+            server_mode = true;
+            break;
+        case 't':
+            if(sscanf(optarg, "%u", &runtime_s) != 1 || runtime_s < 1) {
+                fprintf(stderr, "invalid argument passed to -t\n");
+                exit(1);
+            }
+            break;
+        default:
+            usage(argv[0]);
+            exit(1);
+        }
+    }
+
+    if(server_mode && host != NULL) {
+        printf("cannot use -c in server mode\n");
+        exit(1);
+    }
+
+    if(!server_mode && host == NULL) {
+        usage(argv[0]);
+        exit(1);
+    }
+
+
     char port_char[16];
     sprintf(port_char, "%d", port);
-
-
-    run_client(port_char, gso, logfile, cc, iw, host, runtime_s, ttfb_only);
-
-
+    return server_mode ?
+                run_server(address, port_char, gso, logfile, cc, iw, "server.crt", "server.key") :
+                run_client(port_char, gso, logfile, cc, iw, host, runtime_s, ttfb_only);
 }

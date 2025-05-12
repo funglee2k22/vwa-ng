@@ -17,15 +17,19 @@
 #include <quicly/streambuf.h>
 #include <picotls/../../t/util.h>
 
-static int client_socket = -1;
+static int client_quic_socket = -1;
+static int client_tcp_socket = -1;
 static quicly_conn_t *conn = NULL;
+static quicly_stream_t *ctrl_stream = NULL;
 static ev_timer client_timeout;
 static quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
 static int64_t start_time = 0;
 static int64_t connect_time = 0;
-static bool quit_after_first_byte = false;
 static ptls_iovec_t resumption_token;
+
+struct ev_loop *loop = NULL;
+session_t *hh_session = NULL; 
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
@@ -35,6 +39,45 @@ static quicly_stream_open_t stream_open = {&client_on_stream_open};
 static quicly_closed_by_remote_t closed_by_remote = {&client_on_conn_close};
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents);
+
+session_t *find_session(long int stream_id)
+{
+    session_t *s = NULL;
+
+    HASH_FIND_INT(hh_session, &stream_id, s);
+    if (!s) {
+        printf("could not find session for quic stream %ld. \n", stream_id);
+        return NULL;
+    }
+    return s;
+}
+
+void add_session(session_t *t)
+{
+    session_t *s;
+    long int stream_id = t->stream_id;
+
+    HASH_FIND_INT(hh_session, &stream_id, s);
+    if (s) {
+        HASH_DEL(hh_session, s);
+    }
+
+    HASH_ADD_INT(hh_session, stream_id, t);
+    return;
+}
+
+void del_session(long int stream_id)
+{
+    session_t *s;
+
+    HASH_FIND_INT(hh_session, &stream_id, s);
+
+    if (s) {
+        HASH_DEL(hh_session, s);
+    }
+
+    return;
+}
 
 void client_refresh_timeout()
 {
@@ -46,7 +89,7 @@ void client_refresh_timeout()
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents)
 {
-    if(!send_pending(&client_ctx, client_socket, conn)) {
+    if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         quicly_free(conn);
         exit(0);
     }
@@ -54,7 +97,7 @@ void client_timeout_cb(EV_P_ ev_timer *w, int revents)
     client_refresh_timeout();
 }
 
-void client_read_cb(EV_P_ ev_io *w, int revents)
+void client_quic_read_cb(EV_P_ ev_io *w, int revents)
 {
     // retrieve data
     uint8_t buf[4096];
@@ -90,7 +133,7 @@ void client_read_cb(EV_P_ ev_io *w, int revents)
         perror("recvfrom failed");
     }
 
-    if(!send_pending(&client_ctx, client_socket, conn)) {
+    if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         quicly_free(conn);
         exit(0);
     }
@@ -104,7 +147,9 @@ void enqueue_request(quicly_conn_t *conn)
     int ret = quicly_open_stream(conn, &stream, 0);
     assert(ret == 0);
     const char *req = "quic-pep client start a connection";
-    
+   
+    ctrl_stream = stream; 
+
     quicly_streambuf_egress_write(stream, req, strlen(req));
     quicly_streambuf_egress_shutdown(stream);
 }
@@ -132,7 +177,7 @@ void quit_client()
     }
 
     quicly_close(conn, 0, "");
-    if(!send_pending(&client_ctx, client_socket, conn)) {
+    if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         printf("send_pending failed during connection close");
         quicly_free(conn);
         exit(0);
@@ -140,15 +185,108 @@ void quit_client()
     client_refresh_timeout();
 }
 
-void on_first_byte()
-{
-    printf("time to first byte: %lums\n", client_ctx.now->cb(client_ctx.now) - start_time);
-    if(quit_after_first_byte) {
-        quit_client();
-    }
+void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
+{  
+    
+
+
+
+
 }
 
-int clt_setup_quic_connection(const char *host, const char *port, const char *logfile) 
+void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
+{
+    int fd = -1; 
+    struct sockaddr_in sa; 
+    socklen_t salen = sizeof(sa);
+    
+    fd = accept(w->fd, (struct sockaddr *)&sa, &salen); 
+    if (fd < 0) { 
+	perror("accept(2) failedi.");
+        return;
+    }
+
+    struct sockaddr_in da; 
+    socklen_t dalen = sizeof(da);
+    
+#ifndef SO_ORIGINAL_DST
+#define SO_ORIGINAL_DST 80
+#endif
+
+    if (getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &da, &dalen) != 0) {
+        perror("getsockopt(SO_ORIGINAL_DST) failed");
+        return;
+    }
+
+    printf("Accepted client %s:%d -> %s:%d on fd %d\n", 
+		   inet_ntoa(sa.sin_addr), ntohs(sa.sin_port),
+                   inet_ntoa(da.sin_addr), ntohs(da.sin_port),
+		   fd);
+    
+    //open quicly stream; 
+    quicly_stream_t *stream = NULL;
+    int ret = quicly_open_stream(conn, &stream, 0);   
+    assert(ret == 0);
+
+    session_t *session = (session_t *)malloc(sizeof(session_t)); 
+    session->fd = fd;
+    session->stream_id = stream->stream_id;
+    memcpy(&(session->sa), (void *)&sa, salen);
+    memcpy(&(session->da), (void *)&da, dalen);
+    
+    add_session(session);
+   
+    //ctrl_stream always has stream id 0. 
+    ret = quicly_get_or_open_stream(conn, 0, &ctrl_stream);
+    assert(ret == 0);
+
+    //send clt side session info to server;
+    quicly_streambuf_egress_write(ctrl_stream, session, sizeof(session_t));
+    quicly_streambuf_egress_shutdown(ctrl_stream);
+
+    ev_io *client_tcp_socket_watcher = (ev_io *)malloc(sizeof(ev_io)); 
+    ev_io_init(client_tcp_socket_watcher, client_tcp_read_cb, fd, EV_READ);
+    ev_io_start(loop, client_tcp_socket_watcher);
+
+    return;
+} 
+
+
+int clt_setup_tcp_listener(const char *host, const char *port)
+{
+    struct sockaddr_in sa;
+    socklen_t salen = sizeof(sa);
+
+    int fd = -1;
+    if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("socket(2) failed."); 
+	exit(-1);
+    }
+
+    if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &(int){1}, sizeof(int)) != 0) {
+	perror("setsockopt(IP_TRANSPARENT) failed.");
+        return -1; 
+    }
+
+    memset(&sa, 0, salen); 
+    sa.sin_family = AF_INET; 
+    sa.sin_port = htons(atoi(port));
+    sa.sin_addr.s_addr = htonl(INADDR_ANY);
+    
+    if (bind(fd, (void *)&sa, sizeof(sa)) != 0) { 
+	perror("bind(2) failed.");
+	return -1;
+    } 
+
+    if (listen(fd, 128) != 0) { 
+	perror("listen(2) failed.");
+	return -1;
+    } 
+    
+    return fd;
+}
+
+int clt_setup_quic_connection(const char *host, const char *port) 
 {
     setup_session_cache(get_tlsctx());
     quicly_amend_ptls_context(get_tlsctx());
@@ -163,8 +301,6 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
     client_ctx.initcwnd_packets = 20;
     client_ctx.init_cc = &quicly_cc_cubic_init;
 
-    struct ev_loop *loop = EV_DEFAULT;
-
     struct sockaddr_storage sas;
     socklen_t salen;
     if (resolve_address((void *)&sas, &salen, host, port, AF_UNSPEC, SOCK_DGRAM, IPPROTO_UDP) != 0) {
@@ -173,10 +309,10 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
     
     struct sockaddr *sa = (struct sockaddr *)&sas;
     
-    client_socket = socket(sa->sa_family, SOCK_DGRAM, IPPROTO_UDP);
-    if (client_socket == -1) {
+    client_quic_socket = socket(sa->sa_family, SOCK_DGRAM, IPPROTO_UDP);
+    if (client_quic_socket == -1) {
         perror("socket(2) failed");
-        return 1;
+        return -1;
     }
     
     if (sa->sa_family == AF_INET) {
@@ -185,9 +321,9 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
         local.sin_family = AF_INET;
         local.sin_addr.s_addr = INADDR_ANY;
         local.sin_port = 0; // Let the OS choose the port
-        if (bind(client_socket, (struct sockaddr *)&local, sizeof(local)) != 0) {
+        if (bind(client_quic_socket, (struct sockaddr *)&local, sizeof(local)) != 0) {
             perror("bind(2) failed");
-            return 1;
+            return -1;
         }
     } else if (sa->sa_family == AF_INET6) {
         struct sockaddr_in6 local;
@@ -195,16 +331,16 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
         local.sin6_family = AF_INET6;
         local.sin6_addr = in6addr_any;
         local.sin6_port = 0; // Let the OS choose the port
-        if (bind(client_socket, (struct sockaddr *)&local, sizeof(local)) != 0) {
+        if (bind(client_quic_socket, (struct sockaddr *)&local, sizeof(local)) != 0) {
             perror("bind(2) failed");
-            return 1;
+            return -1;
         }
     } else {
         fprintf(stderr, "Unknown address family\n");
-        return 1;
+        return -1;
     }
 
-    printf("starting pep client with host %s, port %s\n", host, port);
+    printf("starting pep client with remote host %s, port %s\n", host, port);
 
     // start time
     start_time = client_ctx.now->cb(client_ctx.now);
@@ -214,41 +350,50 @@ int clt_setup_quic_connection(const char *host, const char *port, const char *lo
     ++next_cid.master_id;
 
     enqueue_request(conn);
-    if(!send_pending(&client_ctx, client_socket, conn)) {
+    if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         printf("failed to connect: send_pending failed\n");
-        exit(1);
+        exit(-1);
     }
 
     if(conn == NULL) {
-        fprintf(stderr, "connection == NULL\n");
-        exit(1);
+        fprintf(stderr, "quic connection == NULL\n");
+        exit(-1);
     }
 
-    ev_io socket_watcher;
-    ev_io_init(&socket_watcher, &client_read_cb, client_socket, EV_READ);
-    ev_io_start(loop, &socket_watcher);
-
-    ev_init(&client_timeout, &client_timeout_cb);
-    client_refresh_timeout();
-
-    int runtime_s = 3600;
-    client_set_quit_after(runtime_s);
-
-    ev_run(loop, 0);
-    return 0;
+    return client_quic_socket;
 }
 
 
 int main(int argc, char** argv)
 {
     int port = 8443;
+    int tcp_port = 4433; 
     const char *host = "192.168.30.1";
     const char *logfile = NULL;
+    const char *local_host = "127.0.0.1"; 
+
+    loop = EV_DEFAULT;
 
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);
+    client_quic_socket = clt_setup_quic_connection(host, port_char);
 
-    clt_setup_quic_connection(host, port_char, logfile);
+    snprintf(port_char, sizeof(port_char), "%d", tcp_port);
+    client_tcp_socket = clt_setup_tcp_listener(local_host, port_char);
 
+    ev_io quic_socket_watcher, tcp_socket_accept_watcher;
+    ev_io_init(&quic_socket_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
+    ev_io_start(loop, &quic_socket_watcher);
+     
+    ev_io_init(&tcp_socket_accept_watcher, &client_tcp_accept_cb, client_tcp_socket, EV_READ);
+    ev_io_start(loop, &tcp_socket_accept_watcher);
+
+    ev_init(&client_timeout, &client_timeout_cb);
+    client_refresh_timeout();
+
+    //int runtime_s = 3600;
+    //client_set_quit_after(runtime_s);
+
+    ev_run(loop, 0);
 
 }

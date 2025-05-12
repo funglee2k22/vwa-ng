@@ -1,10 +1,21 @@
 #pragma once
 
+#include "uthash.h"
+
 #include <quicly.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+
+typedef struct cpep_session { 
+    long int stream_id;      // on both client and server, stream_id is the key 
+    int fd; 
+    struct sockaddr_in sa;   // TCP socket src addr 
+    struct sockaddr_in da;   // TCP socket original dst addr 
+    //should be ev_timer     // TODO  it should be a timer handle. 
+    UT_hash_handle hh; 
+} session_t;  
 
 ptls_context_t *get_tlsctx();
 
