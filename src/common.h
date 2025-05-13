@@ -15,7 +15,15 @@ typedef struct cpep_session {
     struct sockaddr_in da;   // TCP socket original dst addr 
     //should be ev_timer     // TODO  it should be a timer handle. 
     UT_hash_handle hh; 
-} session_t;  
+} session_t; 
+
+typedef struct cpep_frame { 
+    int type; 
+    union { 
+        session_t s; 
+	char  payload[4096];
+    };
+} frame_t; 
 
 ptls_context_t *get_tlsctx();
 
