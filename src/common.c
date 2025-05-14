@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/udp.h>
 #include <netdb.h>
@@ -55,7 +56,10 @@ bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, si
             perror("sendmsg failed");
             return false;
         }
+        printf("send_dgram_default %ld bytes sent\n", bytes_sent);
     }
+
+
 
     return true;
 }
@@ -72,11 +76,10 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
     uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * ctx->transport_params.max_udp_payload_size];
     size_t num_dgrams = SEND_BATCH_SIZE;
     size_t send_dgrams_c = 0;
-
+    
     while(true) {
         num_dgrams = PTLS_ELEMENTSOF(dgrams);
         int quicly_res = quicly_send(conn, &dest, &src, dgrams, &num_dgrams, &dgrams_buf, sizeof(dgrams_buf));
-
 
         if(quicly_res != 0) {
             if(quicly_res != QUICLY_ERROR_FREE_CONNECTION) {
@@ -93,4 +96,15 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
             return false;
         }
     };
+}
+
+
+int set_non_blocking(int sockfd)
+{
+  int flags = fcntl(sockfd, F_GETFL, 0);
+  if(fcntl(sockfd, F_SETFL, (flags < 0 ? 0 : flags) | O_NONBLOCK) == -1) {
+    perror("set_non_blocking");
+    return -1;
+  }
+  return 0;
 }

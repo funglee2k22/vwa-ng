@@ -12,6 +12,8 @@ static uint64_t bytes_received = 0;
 static ev_timer report_timer;
 static int runtime_s = 3600;
 
+extern session_t *hh_tcp_to_quic;
+extern session_t *hh_quic_to_tcp;
 
 void format_size(char *dst, double bytes)
 {
@@ -53,7 +55,9 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
         return;
 
     long int stream_id = stream->stream_id;
-    session_t *session = find_session(stream_id); 
+    session_t *session = NULL;
+    HASH_FIND_INT(hh_quic_to_tcp, &stream_id, session); 
+
     if (session == NULL) {  
 	fprintf(stderr, "could not find the session info for stream: %ld\n", stream_id); 
         quicly_stream_sync_recvbuf(stream, len);

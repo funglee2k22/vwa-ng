@@ -31,6 +31,7 @@ ptls_context_t *get_tlsctx();
 struct addrinfo *get_address(const char *host, const char *port);
 bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn);
 
+int set_non_blocking(int sockfd);
 
 static inline int64_t min_int64(int64_t a, int64_t b)
 {
