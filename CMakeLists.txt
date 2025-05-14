@@ -5,7 +5,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(extern)
 
-add_executable(new-clt uthash.h src/common.h src/common.c src/client.h
+add_executable(new-clt src/uthash.h src/common.h src/common.c src/client.h
                 src/client_stream.h src/client_stream.c src/client.c) 
 target_link_libraries(new-clt PRIVATE quicly ev picotls)
 target_compile_definitions(new-clt PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
@@ -16,7 +16,7 @@ target_compile_options(new-clt PRIVATE
 )
 
 
-add_executable(new-srv uthash.h src/common.h src/common.c src/server.h
+add_executable(new-srv src/uthash.h src/common.h src/common.c src/server.h
                 src/server_stream.h src/server_stream.c src/server.c) 
 target_link_libraries(new-srv PRIVATE quicly ev picotls)
 target_compile_definitions(new-srv PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
