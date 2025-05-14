@@ -105,11 +105,13 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
     printf("server_stream_send_stop stream-id=%li\n", stream->stream_id);
     fprintf(stderr, "received STOP_SENDING: %li\n", err);
+    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 } 
 
 
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
+    printf("server stream %ld receive %ld bytes.\n", stream->stream_id, len);
     if (len == 0) 
 	return; 
 
@@ -256,23 +258,26 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 } 
 
 static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
-{ 
+{
     if (len == 0) return; 
-
-    if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
-        return; 
-
+    
+    if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0) 
+        return;
+       
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream); 
     quicly_stream_sync_recvbuf(stream, len);
-   
+
+    /* remove used bytes from receive buffer */
+    quicly_streambuf_ingress_shift(stream, input.len);
+ 
     frame_t ctrl_frame;  
     memcpy((void *)&ctrl_frame, input.base, input.len); 
     
-    if (ctrl_frame.type != 1) { 
-        //TODO in future; 
+    if (ctrl_frame.type != 1) {
+	printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
 	return; 
-    } 
+    }
     
     session_t *p = (session_t *) &(ctrl_frame.s);
     struct sockaddr_in *da = (struct sockaddr_in *) &(p->da); 
@@ -299,42 +304,34 @@ static void server_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
 {
     printf("server_stream_receive_reset stream-id=%li\n", stream->stream_id);
     fprintf(stderr, "received RESET_STREAM: %li\n", err);
+    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 }
 
 static const quicly_stream_callbacks_t server_stream_callbacks = {
-    &server_stream_destroy,
-    &server_stream_send_shift,
-    &server_stream_send_emit,
-    &server_stream_send_stop,
-    &server_stream_receive,
-    &server_stream_receive_reset
+    quicly_streambuf_destroy,
+    quicly_streambuf_egress_shift,
+    quicly_streambuf_egress_emit,
+    server_stream_send_stop,
+    server_stream_receive,
+    server_stream_receive_reset
 };
 
 static const quicly_stream_callbacks_t server_ctrl_stream_callbacks = {
-    &server_stream_destroy,
-    &server_stream_send_shift,
-    &server_stream_send_emit,
-    &server_stream_send_stop,
-    &server_ctrl_stream_receive,
-    &server_stream_receive_reset
+    quicly_streambuf_destroy,
+    quicly_streambuf_egress_shift,
+    quicly_streambuf_egress_emit,
+    server_stream_send_stop,
+    server_ctrl_stream_receive,
+    server_stream_receive_reset
 };
 
 quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 {
-    server_stream *s = malloc(sizeof(server_stream));
-    s->target_offset = UINT64_MAX;
-    s->acked_offset = 0;
-    s->stream = stream;
-    s->report_id = report_counter++;
-    s->report_second = 0;
-    s->report_num_packets_sent = 0;
-    s->report_num_packets_lost = 0;
-    s->total_num_packets_sent = 0;
-    s->total_num_packets_lost = 0;
-    ev_timer_init(&s->report_timer, server_report_cb, 1.0, 1.0);
-    s->report_timer.data = s;
 
-    stream->data = s;
+    int ret;
+    if ((ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t))) != 0)
+        return ret;
+    
     if (stream->stream_id == 0) 
         stream->callbacks = &server_ctrl_stream_callbacks;
     else 

@@ -18,7 +18,7 @@
 static quicly_conn_t **conns;
 static int udp_server_socket = -1;
 static quicly_context_t server_ctx;
-static int server_socket;
+//static int server_socket;
 static size_t num_conns = 0;
 static ev_timer server_timeout;
 static quicly_cid_plaintext_t next_cid;
@@ -93,8 +93,8 @@ void server_send_pending()
 {
     int64_t next_timeout = INT64_MAX;
     for(size_t i = 0; i < num_conns; ++i) {
-        if(!send_pending(&server_ctx, server_socket, conns[i])) {
-            i = remove_conn(i);
+        if(!send_pending(&server_ctx, udp_server_socket, conns[i])) {
+	    i = remove_conn(i);
         } else {
             next_timeout = min_int64(quicly_get_first_timeout(conns[i]), next_timeout);
         }
@@ -149,6 +149,7 @@ static void server_read_cb(EV_P_ ev_io *w, int revents)
             if(packet_len == SIZE_MAX) {
                 break;
             }
+	    
             server_handle_packet(&packet, &sa, salen);
         }
     }
@@ -216,8 +217,8 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
 
 int main(int argc, char** argv)
 {
-    int port = 8443;
-    const char *address = "127.0.0.1";
+    int port = 4433;
+    const char *address = "192.168.30.1";
     const char *logfile = NULL;
     const char *keyfile = "server.key";
     const char *certfile = "server.crt";
@@ -230,10 +231,10 @@ int main(int argc, char** argv)
     loop = EV_DEFAULT; 
 
     ev_io socket_watcher;
-    ev_io_init(&socket_watcher, &server_read_cb, server_socket, EV_READ);
+    ev_io_init(&socket_watcher, &server_read_cb, udp_server_socket, EV_READ);
     ev_io_start(loop, &socket_watcher);
 
-    //ev_init(&server_timeout, &server_timeout_cb);
+    ev_init(&server_timeout, &server_timeout_cb);
 
     ev_run(loop, 0);
 

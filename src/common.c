@@ -56,7 +56,7 @@ bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, si
             perror("sendmsg failed");
             return false;
         }
-        printf("send_dgram_default %ld bytes sent\n", bytes_sent);
+        //printf("send_dgram_default %ld bytes sent\n", bytes_sent);
     }
 
 

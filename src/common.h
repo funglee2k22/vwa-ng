@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
+#define my_debug()  printf(" %s, %d we are good here.\n",  __func__, __LINE__); fflush(stdout);
+
 typedef struct cpep_session { 
     long int stream_id;      // on both client and server, stream_id is the key 
     int fd; 
