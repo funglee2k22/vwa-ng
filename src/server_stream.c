@@ -26,6 +26,8 @@ typedef struct
     ev_timer report_timer;
 } server_stream;
 
+int create_tcp_connection(struct sockaddr *sa);
+void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
 static int report_counter = 0;
 
 void server_cleanup(int fd)
@@ -109,6 +111,35 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 } 
 
 
+session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
+{ 
+    long int stream_id = stream->stream_id;
+    session_t *p = (session_t *) malloc(sizeof(session_t));
+    memcpy(p, &(ctrl_frame->s), sizeof(session_t));
+    
+    struct sockaddr_in *da = (struct sockaddr_in *) &(p->da);
+    struct sockaddr_in *sa = (struct sockaddr_in *) &(p->sa);
+    p->stream_id = stream_id;
+    p->conn = stream->conn;
+
+    int fd = create_tcp_connection((struct sockaddr *) da);
+    assert(fd > 0);
+    p->fd = fd;
+    printf("session quic: %ld <-> tcp: %d created.\n", stream->stream_id, fd);
+
+    //add session into hashtables 
+    HASH_ADD_INT(hh_quic_to_tcp, stream_id, p);
+    HASH_ADD_INT(hh_tcp_to_quic, fd, p);
+
+    //add socket read watcher
+    ev_io *socket_watcher = calloc(1, sizeof(ev_io));
+    ev_io_init(socket_watcher, server_tcp_read_cb, fd, EV_READ);
+    ev_io_start(loop, socket_watcher);
+
+    return p;
+};
+
+
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
     printf("server stream %ld receive %ld bytes.\n", stream->stream_id, len);
@@ -129,10 +160,18 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s); 
     if (!s) { 
-        fprintf(stderr, "could not find related session for stream %ld.\n", stream_id);
+	// assume it is the ctrl frame, 
+        frame_t *ctrl_frame = (frame_t *) input.base;
+	if (ctrl_frame->type != 1) { 
+	    my_debug(); 
+	    printf("error, it is not a the control stream.\n");
+	    return;
+	}
+        session_t *ns = handle_ctrl_frame(stream, ctrl_frame);
+        ns->ctrl_frame_received = true; 
 	return;
     }
-
+    
     int fd = s->fd; 
     ssize_t send_bytes = send(fd, input.base, input.len, 0);
     if (send_bytes == -1) {
@@ -270,12 +309,14 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
- 
+
+    //printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base); 
+   
     frame_t ctrl_frame;  
     memcpy((void *)&ctrl_frame, input.base, input.len); 
     
     if (ctrl_frame.type != 1) {
-	printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
+
 	return; 
     }
     
@@ -286,6 +327,7 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
     int fd = create_tcp_connection((struct sockaddr *) da);
     assert(fd > 0); 
+
     add_session(fd, stream->stream_id, sa, da);
 
     printf("session quic: %ld <-> tcp: %d created.\n", stream->stream_id, fd); 
