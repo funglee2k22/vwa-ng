@@ -7,10 +7,9 @@
 #include <stdbool.h>
 #include <quicly/streambuf.h>
 
-extern struct ev_loop *loop;
-
 extern session_t *hh_tcp_to_quic; 
 extern session_t *hh_quic_to_tcp;
+extern struct ev_loop *loop;
 
 typedef struct
 {
@@ -124,6 +123,7 @@ session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
 
     int fd = create_tcp_connection((struct sockaddr *) da);
     assert(fd > 0);
+    set_non_blocking(fd);
     p->fd = fd;
     printf("session quic: %ld <-> tcp: %d created.\n", stream->stream_id, fd);
 
@@ -132,10 +132,11 @@ session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
     HASH_ADD_INT(hh_tcp_to_quic, fd, p);
 
     //add socket read watcher
-    ev_io *socket_watcher = calloc(1, sizeof(ev_io));
+    ev_io *socket_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(socket_watcher, server_tcp_read_cb, fd, EV_READ);
+    printf("watcher: %p, loop: %p, server_tcp_read_cb: %p\n", socket_watcher, loop, server_tcp_read_cb);
     ev_io_start(loop, socket_watcher);
-
+    
     return p;
 };
 
@@ -152,33 +153,46 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    
     quicly_stream_sync_recvbuf(stream, len);
-
-    session_t *s = NULL; 
+    
+    //printf("input.len: %ld, size of frame_t: %ld.\n", input.len, sizeof(frame_t));
+    long int l = input.len;
+    char *base = input.base;
     long int stream_id = stream->stream_id;
+    session_t *s = NULL, *c, *tmp; 
+    
+    //HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s); 
 
-    HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s); 
+    HASH_ITER(hh, hh_quic_to_tcp, c, tmp) {
+        if (c->stream_id == stream_id) {
+            s = c;
+            break;
+        }
+    }
+
     if (!s) { 
-	// assume it is the ctrl frame, 
         frame_t *ctrl_frame = (frame_t *) input.base;
 	if (ctrl_frame->type != 1) { 
-	    my_debug(); 
 	    printf("error, it is not a the control stream.\n");
 	    return;
 	}
-        session_t *ns = handle_ctrl_frame(stream, ctrl_frame);
-        ns->ctrl_frame_received = true; 
-	return;
+        s = handle_ctrl_frame(stream, ctrl_frame);
+        s->ctrl_frame_received = true; 
+	base += sizeof(frame_t);
+	l -= sizeof(frame_t);
     }
     
-    int fd = s->fd; 
-    ssize_t send_bytes = send(fd, input.base, input.len, 0);
+    if (l <= 0) 
+	return;
+   
+    ssize_t send_bytes = send(s->fd, base, l, 0);
     if (send_bytes == -1) {
 	perror("send (2) failed.");
         fprintf(stderr, "relay msg from quic to tcp failed with %d, %s.\n", errno, strerror(errno)); 
 	return;
     }
+
+    printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes); 
     
     return; 
 
@@ -265,6 +279,8 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     char buf[4096];
     int fd = w->fd;
     ssize_t read_bytes = 0;
+    
+    my_debug();
 
     while((read_bytes = read(fd, buf, sizeof(buf)) > 0)) {
         int ret = srv_tcp_to_quic(fd, buf, read_bytes);
@@ -310,34 +326,8 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
 
-    //printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base); 
-   
-    frame_t ctrl_frame;  
-    memcpy((void *)&ctrl_frame, input.base, input.len); 
+    printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base); 
     
-    if (ctrl_frame.type != 1) {
-
-	return; 
-    }
-    
-    session_t *p = (session_t *) &(ctrl_frame.s);
-    struct sockaddr_in *da = (struct sockaddr_in *) &(p->da); 
-    struct sockaddr_in *sa = (struct sockaddr_in *) &(p->sa); 
-    p->conn = stream->conn; 
-
-    int fd = create_tcp_connection((struct sockaddr *) da);
-    assert(fd > 0); 
-
-    add_session(fd, stream->stream_id, sa, da);
-
-    printf("session quic: %ld <-> tcp: %d created.\n", stream->stream_id, fd); 
-
-    //add socket read watcher 
-    ev_io *socket_watcher = calloc(1, sizeof(ev_io)); 
-    
-    ev_io_init(socket_watcher, server_tcp_read_cb, fd, EV_READ);
-    ev_io_start(loop, socket_watcher); 
-    //TODO adding the socket watcher to session_t ?     
     return;
 } 
    
