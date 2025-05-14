@@ -1,6 +1,9 @@
 #include "server_stream.h"
+#include "common.h" 
+#include "uthash.h"
 
 #include <ev.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <quicly/streambuf.h>
 
@@ -122,7 +125,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     session_t *s = NULL; 
     long int stream_id = stream->stream_id;
 
-    HASH_FIND_INT(hh_stream_to_tcp, &stream_id, s); 
+    HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s); 
     if (!s) { 
         fprintf(stderr, "could not find related session for stream %ld.\n", stream_id);
 	return;
@@ -130,14 +133,13 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     int fd = s->fd; 
     ssize_t send_bytes = send(fd, input.base, input.len, 0);
-    if (bytes_sent == -1) {
+    if (send_bytes == -1) {
 	perror("send (2) failed.");
         fprintf(stderr, "relay msg from quic to tcp failed with %d, %s.\n", errno, strerror(errno)); 
 	return;
     }
     
     return; 
-}
 
 #if 0
     if(quicly_recvstate_transfer_complete(&stream->recvstate)) {
@@ -187,9 +189,33 @@ static void add_session(int fd, long int stream_id, struct sockaddr_in *sa, stru
     HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s);
     if (s) 
 	HASH_DEL(hh_quic_to_tcp, s);
-    HASH_ADD_INT(hh_quic_to_tcp, &stream_id, ns); 
+    HASH_ADD_INT(hh_quic_to_tcp, stream_id, ns); 
 
     return;
+}
+
+int srv_tcp_to_quic(int fd, char *buf, int len)
+{ 
+    session_t *s = NULL;
+    
+    HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
+    if (!s) {
+	printf("could not find quic stream peer for tcp %d.\n", fd);	
+        return -1;
+    } 
+
+    quicly_stream_t *stream = NULL; 
+    long int stream_id = s->stream_id; 
+    quicly_conn_t *conn = s->conn; 
+    int ret = quicly_get_or_open_stream(conn, stream_id, &stream); 
+    if (ret != 0) { 
+        printf("failed to open stream %ld for tcp %d.\n", stream_id, fd);
+        return -1;
+    }
+    quicly_streambuf_egress_write(stream, buf, len);
+    //quicly_streambuf_egress_shutdown(stream);
+
+    return 0;
 } 
 
 
@@ -241,7 +267,7 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
     quicly_stream_sync_recvbuf(stream, len);
    
     frame_t ctrl_frame;  
-    memcpy((void *) ctrl_frame, input.base, input.len); 
+    memcpy((void *)&ctrl_frame, input.base, input.len); 
     
     if (ctrl_frame.type != 1) { 
         //TODO in future; 
@@ -251,8 +277,9 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
     session_t *p = (session_t *) &(ctrl_frame.s);
     struct sockaddr_in *da = (struct sockaddr_in *) &(p->da); 
     struct sockaddr_in *sa = (struct sockaddr_in *) &(p->sa); 
-    
-    int fd = create_tcp_connection(da);
+    p->conn = stream->conn; 
+
+    int fd = create_tcp_connection((struct sockaddr *) da);
     assert(fd > 0); 
     add_session(fd, stream->stream_id, sa, da);
 
