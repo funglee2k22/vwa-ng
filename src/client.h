@@ -12,3 +12,5 @@ session_t *find_session(long int stream_id);
 void del_session(long int stream_id);
 
 
+void client_cleanup(int fd);
+

@@ -16,12 +16,17 @@
 #include <picotls/../../t/util.h>
 
 static quicly_conn_t **conns;
-static int server_socket = -1;
+static int udp_server_socket = -1;
 static quicly_context_t server_ctx;
 static int server_socket;
 static size_t num_conns = 0;
 static ev_timer server_timeout;
 static quicly_cid_plaintext_t next_cid;
+struct ev_loop *loop = NULL; 
+
+session_t *hh_tcp_to_quic = NULL;
+session_t *hh_quic_to_tcp = NULL; 
+
 
 static int udp_listen(struct addrinfo *addr)
 {
@@ -174,7 +179,7 @@ static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t 
 static quicly_stream_open_t stream_open = {&server_on_stream_open};
 static quicly_closed_by_remote_t closed_by_remote = {&server_on_conn_close};
 
-int srv_setup_quic_listener(const char* address, const char *port, const char *logfile, const char *key, const char *cert)
+int srv_setup_quic_listener(const char* address, const char *port, const char *key, const char *cert)
 {
     setup_session_cache(get_tlsctx());
     quicly_amend_ptls_context(get_tlsctx());
@@ -190,37 +195,23 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *l
     load_certificate_chain(server_ctx.tls, cert);
     load_private_key(server_ctx.tls, key);
 
-    struct ev_loop *loop = EV_DEFAULT;
-
     struct addrinfo *addr = get_address(address, port);
     if (addr == NULL) {
         printf("failed get addrinfo for port %s\n", port);
         return -1;
     }
     
-    server_socket = udp_listen(addr);
+    int server_socket = udp_listen(addr);
     freeaddrinfo(addr);
     
     if (server_socket == -1) {
         printf("failed to listen on port %s\n", port);
-        return 1;
-    }
-
-    if (logfile) {
-        setup_log_event(server_ctx.tls, logfile);
+        return -1;
     }
 
     printf("starting server with pid %" PRIu64 ", address %s, port %s\n", get_current_pid(), address, port);
 
-    ev_io socket_watcher;
-    ev_io_init(&socket_watcher, &server_read_cb, server_socket, EV_READ);
-    ev_io_start(loop, &socket_watcher);
-
-    ev_init(&server_timeout, &server_timeout_cb);
-
-    ev_run(loop, 0);
-
-    return 0;
+    return server_socket;
 }
 
 int main(int argc, char** argv)
@@ -234,6 +225,16 @@ int main(int argc, char** argv)
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);
 
-    srv_setup_quic_listener(address, port_char, logfile, keyfile, certfile);
+    udp_server_socket = srv_setup_quic_listener(address, port_char, keyfile, certfile);
+
+    loop = EV_DEFAULT; 
+
+    ev_io socket_watcher;
+    ev_io_init(&socket_watcher, &server_read_cb, server_socket, EV_READ);
+    ev_io_start(loop, &socket_watcher);
+
+    //ev_init(&server_timeout, &server_timeout_cb);
+
+    ev_run(loop, 0);
 
 }

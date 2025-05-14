@@ -2,7 +2,9 @@
 #include "client.h"
 #include "common.h"
 #include <ev.h>
+#include <errno.h>
 #include <stdbool.h>
+#include <sys/socket.h>
 #include <quicly/streambuf.h>
 
 static int current_second = 0;
@@ -45,13 +47,44 @@ static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    if(len == 0) {
+    if (len == 0) return; 
+
+    if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
+
+    long int stream_id = stream->stream_id;
+    session_t *session = find_session(stream_id); 
+    if (session == NULL) {  
+	fprintf(stderr, "could not find the session info for stream: %ld\n", stream_id); 
+        quicly_stream_sync_recvbuf(stream, len);
+	return;
     }
 
-    bytes_received += len;
+    int fd = session->fd;
+    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+    fprintf(stdout, "stream: %ld received %zu bytes\n", stream->stream_id, input.len);
+ 
+    size_t bytes_sent = send(fd, input.base, input.len, 0);
+    if (bytes_sent == -1) {
+        perror("send");
+        fprintf(stderr, "error %d, %s\n", errno, strerror(errno)); 
+        //TODO should we close stream also ?
+	client_cleanup(fd); 
+    } 	
+
     quicly_stream_sync_recvbuf(stream, len);
 
+    return;
+}
+
+
+static void client_ctrl_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
+{
+    if (len == 0) return; 
+    fprintf(stdout, "ctrl stream receive %zu bytes.\n", len);    
+    //TODO 
+    //client side ctrl stream handling. 
+    quicly_stream_sync_recvbuf(stream, len);
 }
 
 static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
@@ -68,12 +101,24 @@ static const quicly_stream_callbacks_t client_stream_callbacks = {
     &client_stream_receive_reset
 };
 
+static const quicly_stream_callbacks_t client_ctrl_stream_callbacks = { 
+    &quicly_streambuf_destroy,
+    &quicly_streambuf_egress_shift,
+    &quicly_streambuf_egress_emit,
+    &client_stream_send_stop,
+    &client_ctrl_stream_receive,
+    &client_stream_receive_reset
+};
 
 quicly_error_t client_on_stream_open(quicly_stream_open_t *self, quicly_stream_t *stream)
 {
     int ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t));
     assert(ret == 0);
-    stream->callbacks = &client_stream_callbacks;
+
+    if (stream->stream_id == 0) 
+        stream->callbacks = &client_ctrl_stream_callbacks;
+    else
+        stream->callbacks = &client_stream_callbacks;
 
     return 0;
 }
