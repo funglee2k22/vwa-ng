@@ -224,9 +224,9 @@ void quit_client()
     client_refresh_timeout();
 } 
 
-int clt_tcp_to_quic(int fd, char *buf, int len) 
+static inline int clt_tcp_to_quic(int fd, void *buf, int len) 
 {
-    session_t *s = NULL, *c, *tmp; 
+    session_t *s = NULL, *c, *tmp;
 
     //HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
     HASH_ITER(hh, hh_tcp_to_quic, c, tmp) { 
@@ -241,7 +241,7 @@ int clt_tcp_to_quic(int fd, char *buf, int len)
         return -1;	
     }	
 
-    long int sid = c->stream_id; 
+    long int sid = s->stream_id; 
     assert(sid > 0); 
      
     quicly_stream_t *stream = NULL;
@@ -250,7 +250,7 @@ int clt_tcp_to_quic(int fd, char *buf, int len)
   
     quicly_streambuf_egress_write(stream, buf, len);
     //quicly_streambuf_egress_shutdown(stream); 
-    printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
+    //printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
     return 0;
     
 }
@@ -275,7 +275,9 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
     int fd = w->fd;
     ssize_t read_bytes = 0; 
     
-    if((read_bytes = read(fd, buf, sizeof(buf)) > 0)) { 
+    read_bytes = read(fd, buf, sizeof(buf)); 
+    if(read_bytes > 0) { 
+        //printf("read_bytes: %ld\n", read_bytes);
         int ret = clt_tcp_to_quic(fd, buf, read_bytes);
         if (ret != 0) { 
             printf("fd: %d failed to write into quic stream.\n", fd);
@@ -299,7 +301,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 	}
     } 
 
-    client_refresh_timeout();
+    //client_refresh_timeout();
 
     return; 
 }    
@@ -348,13 +350,14 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
 
     HASH_ADD_INT(hh_tcp_to_quic, fd, session);
     HASH_ADD_INT(hh_quic_to_tcp, stream_id, session);
-    
-    ret = quicly_get_or_open_stream(conn, 0, &ctrl_stream);
-    assert(ret == 0);
+
+    frame_t ctrl_frame; 
+    ctrl_frame.type = 1;
+    memcpy(&(ctrl_frame.s), session, sizeof(session_t));
 
     //send clt side session info to server;
-    quicly_streambuf_egress_write(ctrl_stream, session, sizeof(session_t));
-    //quicly_streambuf_egress_shutdown(ctrl_stream);
+    quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));
+    //quicly_streambuf_egress_shutdown(stream); 
 
     ev_io *client_tcp_socket_watcher = (ev_io *)malloc(sizeof(ev_io)); 
     ev_io_init(client_tcp_socket_watcher, client_tcp_read_cb, fd, EV_READ);
@@ -458,7 +461,6 @@ int clt_setup_quic_connection(const char *host, const char *port)
 
     // start time
     start_time = client_ctx.now->cb(client_ctx.now);
-
     int ret = quicly_connect(&conn, &client_ctx, host, sa, NULL, &next_cid, resumption_token, NULL, NULL, NULL);
     assert(ret == 0);
     ++next_cid.master_id;
