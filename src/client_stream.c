@@ -66,7 +66,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     int fd = session->fd;
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    fprintf(stdout, "stream: %ld received %zu bytes\n", stream->stream_id, input.len);
+    //fprintf(stdout, "stream: %ld received %zu bytes\n", stream->stream_id, input.len);
  
     size_t bytes_sent = send(fd, input.base, input.len, 0);
     if (bytes_sent == -1) {
