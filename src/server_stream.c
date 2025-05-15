@@ -134,7 +134,6 @@ session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
     //add socket read watcher
     ev_io *socket_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(socket_watcher, server_tcp_read_cb, fd, EV_READ);
-    printf("watcher: %p, loop: %p, server_tcp_read_cb: %p\n", socket_watcher, loop, server_tcp_read_cb);
     ev_io_start(loop, socket_watcher);
     
     return p;
@@ -143,7 +142,7 @@ session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
 
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    printf("server stream %ld receive %ld bytes.\n", stream->stream_id, len);
+    //printf("server stream %ld receive %ld bytes.\n", stream->stream_id, len);
     if (len == 0) 
 	return; 
 
@@ -155,7 +154,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
     quicly_stream_sync_recvbuf(stream, len);
     
-    //printf("input.len: %ld, size of frame_t: %ld.\n", input.len, sizeof(frame_t));
+    //printf("input.len: %ld, len: %ld, size of frame_t: %ld.\n", input.len, len, sizeof(frame_t));
     long int l = input.len;
     char *base = input.base;
     long int stream_id = stream->stream_id;
@@ -192,7 +191,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 	return;
     }
 
-    printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes); 
+    //printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes); 
     
     return; 
 
@@ -279,8 +278,6 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     char buf[4096];
     int fd = w->fd;
     ssize_t read_bytes = 0;
-    
-    my_debug();
 
     if((read_bytes = read(fd, buf, sizeof(buf)) > 0)) {
         int ret = srv_tcp_to_quic(fd, buf, read_bytes);
@@ -326,7 +323,7 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
 
-    printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base); 
+    //printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base); 
     
     return;
 } 
