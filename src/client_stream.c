@@ -12,8 +12,9 @@ static uint64_t bytes_received = 0;
 static ev_timer report_timer;
 static int runtime_s = 3600;
 
-extern session_t *hh_tcp_to_quic;
-extern session_t *hh_quic_to_tcp;
+//extern session_t *hh_tcp_to_quic;
+//extern session_t *hh_quic_to_tcp;
+
 
 void format_size(char *dst, double bytes)
 {
@@ -49,32 +50,27 @@ static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    if (len == 0) return; 
+    if (len == 0) 
+	return; 
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
-        return;
+         return;
 
     long int stream_id = stream->stream_id;
-    session_t *session = NULL;
-    HASH_FIND_INT(hh_quic_to_tcp, &stream_id, session); 
+    session_t *session = hash_find_by_stream_id(stream_id); 
+    assert(session != NULL);
 
-    if (session == NULL) {  
-	fprintf(stderr, "could not find the session info for stream: %ld\n", stream_id); 
-        quicly_stream_sync_recvbuf(stream, len);
-	return;
-    }
+    int tcp_fd = session->fd;
+    //ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+    //ssize_t bytes_sent = send(tcp_fd, input.base, input.len);
+    
+    ssize_t bytes_sent = write(tcp_fd, src, len);
 
-    int fd = session->fd;
-    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    //fprintf(stdout, "stream: %ld received %zu bytes\n", stream->stream_id, input.len);
- 
-    size_t bytes_sent = send(fd, input.base, input.len, 0);
     if (bytes_sent == -1) {
-        perror("send");
-        fprintf(stderr, "error %d, %s\n", errno, strerror(errno)); 
+        fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno)); 
         //TODO should we close stream also ?
-	client_cleanup(fd); 
-    } 	
+	client_cleanup(tcp_fd); 
+    } 
 
     quicly_stream_sync_recvbuf(stream, len);
 

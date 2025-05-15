@@ -58,7 +58,7 @@ bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, si
             return false;
         } 
 	total_quic_sent += bytes_sent;
-	if (total_quic_sent > output_thresh) {
+	if (total_quic_sent >= output_thresh) {
 	    output_thresh += 10 * 1024 * 1024;	
             printf("send_dgram_default total %ld bytes sent\n", total_quic_sent); 
 	}

@@ -29,8 +29,10 @@ static int64_t connect_time = 0;
 static ptls_iovec_t resumption_token;
 
 struct ev_loop *loop = NULL;
-session_t *hh_quic_to_tcp = NULL; 
-session_t *hh_tcp_to_quic = NULL; 
+//session_t *hh_quic_to_tcp[1024] = {NULL}; 
+//session_t *hh_tcp_to_quic[1024] = {NULL}; 
+
+session_t *hh_sessions[1024] = {NULL};
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
@@ -41,82 +43,75 @@ static quicly_closed_by_remote_t closed_by_remote = {&client_on_conn_close};
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents); 
 
-#if 0 
-long int find_stream(int fd) 
-{ 
-    session_t *s = NULL; 
+#define HASH_SIZE 1024
+session_t *hash_find_by_tcp_fd(int fd);
+session_t *hash_find_by_stream_id(long int stream_id);
+void hash_insert(session_t *s);
+void hash_del(session_t *s);
 
-    HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
-    if (!s) { 
-        return -1;
+session_t *hash_find_by_tcp_fd(int fd)
+{ 
+    session_t *r = NULL;
+    int i = 0;
+
+    for (i = 0; i < HASH_SIZE; ++i) { 
+	session_t *p = hh_sessions[i];
+        if ((p) && (p->fd == fd)) { 
+	    r = p;
+	    break;
+	}
     } 
-    return s -> stream_id;
-}
-
-void add_stream(session_t *t)
-{ 
-    session_t *s = NULL; 
-    int fd = t->fd;
-     
-    HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
-    if (s) { 
-        HASH_DEL(hh_tcp_to_quic, s);
-    }
-
-    HASH_ADD_INT(hh_tcp_to_quic, fd, s);
-    return;
-}
-
-void del_stream_hh(int fd)
-{ 
-    session_t *s;
     
-    HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
-    if (s) 
-        HASH_DEL(hh_tcp_to_quic, s);
+    return r;
+} 
+
+session_t *hash_find_by_stream_id(long int stream_id)
+{ 
+    session_t *r = NULL;
+    int i = 0;
+    for (i = 0; i < HASH_SIZE - 1; ++i) {
+        session_t *p = hh_sessions[i];
+        if ((p) && (p->stream_id) == stream_id) { 
+	    r = p; 
+	    break;
+        }
+    } 
+    return r;
+} 
+  
+void hash_insert(session_t *s)
+{
+    session_t *r = hash_find_by_tcp_fd(s->fd);
+    
+    if (r) { 
+	//do update 
+	r->stream_id = s->stream_id;    
+        return;
+    }
+
+    int i = 0;
+    for (i = 0; i < HASH_SIZE; ++i) { 
+	session_t *p = hh_sessions[i];
+        if (!p) { 
+	    hh_sessions[i] = s;
+	    return; 
+	}
+    } 
     return;
 }
 
-
-session_t *find_session(long int stream_id)
-{
-    session_t *s = NULL;
-
-    HASH_FIND_INT(hh_session, &stream_id, s);
-    if (!s) {
-        printf("could not find session for quic stream %ld. \n", stream_id);
-        return NULL;
+void hash_del(session_t *s) 
+{ 
+    int i = 0;
+    for (i = 0; i < HASH_SIZE; ++i) { 
+	session_t *p = hh_sessions[i];
+        if ((p) && (p == s)) { 
+	     hh_sessions[i] = NULL;
+	     return;
+	}
     }
-    return s;
 }
 
-void add_session(session_t *t)
-{
-    session_t *s;
-    long int stream_id = t->stream_id;
-
-    HASH_FIND_INT(hh_session, &stream_id, s);
-    if (s) {
-        HASH_DEL(hh_session, s);
-    }
-
-    HASH_ADD_INT(hh_session, stream_id, t);
-    return;
-}
-
-void del_session(long int stream_id)
-{
-    session_t *s;
-
-    HASH_FIND_INT(hh_session, &stream_id, s);
-
-    if (s) {
-        HASH_DEL(hh_session, s);
-    }
-
-    return;
-}
-#endif
 
 void client_refresh_timeout()
 {
@@ -127,11 +122,21 @@ void client_refresh_timeout()
 }
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents)
-{
+{ 
+    static int count; 
+
+    count++;
+
+    if ((count % 10) == 0) { 
+         printf("timeout_cb count %d\n", count);
+    }
+
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         quicly_free(conn);
         exit(0);
     }
+
+    
 
     client_refresh_timeout();
 }
@@ -144,8 +149,16 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
     socklen_t salen = sizeof(sa);
     quicly_decoded_packet_t packet;
     ssize_t bytes_received;
+    static ssize_t quic_total_received, quic_output_thresh; 
 
-    while((bytes_received = recvfrom(w->fd, buf, sizeof(buf), MSG_DONTWAIT,(struct sockaddr *) &sa, &salen)) != -1) {
+    while ((bytes_received = recvfrom(w->fd, buf, sizeof(buf), MSG_DONTWAIT,(struct sockaddr *) &sa, &salen)) != -1) {
+        
+	quic_total_received += bytes_received; 
+        if (quic_total_received >= quic_output_thresh) { 
+	   printf("quic-udp total received %ld bytes.\n", quic_total_received);
+	   quic_output_thresh += 1024 * 1024 * 10;
+	}
+
         for(size_t offset = 0; offset < bytes_received; ) {
             size_t packet_len = quicly_decode_packet(&client_ctx, &packet, buf, bytes_received, &offset);
             if(packet_len == SIZE_MAX) {
@@ -226,15 +239,8 @@ void quit_client()
 
 static inline int clt_tcp_to_quic(int fd, void *buf, int len) 
 {
-    session_t *s = NULL, *c, *tmp;
-
-    //HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
-    HASH_ITER(hh, hh_tcp_to_quic, c, tmp) { 
-        if (c->fd == fd) { 
-	    s = c;
-	    break;
-	}
-    }	
+    session_t *s = hash_find_by_tcp_fd(fd); 
+    assert(s != NULL);
     
     if (!s) { 
         printf("could not find session for tcp %d\n", fd);
@@ -243,29 +249,29 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
 
     long int sid = s->stream_id; 
     assert(sid > 0); 
-     
-    quicly_stream_t *stream = NULL;
-    int ret = quicly_get_or_open_stream(conn, sid, &stream);
-    assert(ret == 0);
-  
+
+    quicly_stream_t *stream = quicly_get_stream(conn, sid);
+    assert(stream != NULL);
+ 
     quicly_streambuf_egress_write(stream, buf, len);
     //quicly_streambuf_egress_shutdown(stream); 
-    //printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
+    printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
+    
     return 0;
     
 }
 
 void client_cleanup(int fd) 
 { 
-    session_t *s = NULL;
-    HASH_FIND_INT(hh_tcp_to_quic, &fd, s); 
+    session_t *s = hash_find_by_tcp_fd(fd); 
     
     if (s) { 
-        HASH_DEL(hh_tcp_to_quic, s);	
-	HASH_DEL(hh_quic_to_tcp, s);
+	hash_del(s);
     }
-        
+
+    free(s);
     close(fd);
+
     return;
 } 	
 
@@ -274,16 +280,23 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
     char buf[4096]; 
     int fd = w->fd;
     ssize_t read_bytes = 0; 
-    
-    read_bytes = read(fd, buf, sizeof(buf)); 
-    if(read_bytes > 0) { 
-        //printf("read_bytes: %ld\n", read_bytes);
+    static ssize_t total_read_bytes, clt_tcp_output_thresh; 
+
+    while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
+	total_read_bytes += read_bytes;
         int ret = clt_tcp_to_quic(fd, buf, read_bytes);
         if (ret != 0) { 
             printf("fd: %d failed to write into quic stream.\n", fd);
 	    return;
         }
-    } else if (read_bytes == 0) { 
+    } 
+
+    if (total_read_bytes >= clt_tcp_output_thresh) { 
+	printf("clt tcp fd: %d, total read %ld bytes.\n", fd, total_read_bytes);
+	clt_tcp_output_thresh += 1024 * 10;
+    }	
+    
+    if (read_bytes == 0) { 
          // tcp connection has been closed. 
 	 printf("fd: %d remote peer closed.\n", fd); 
 	 ev_io_stop(loop, w);
@@ -301,8 +314,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 	}
     } 
 
-    //client_refresh_timeout();
-
+    client_refresh_timeout();
     return; 
 }    
 
@@ -314,10 +326,12 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     
     fd = accept(w->fd, (struct sockaddr *)&sa, &salen); 
     if (fd < 0) { 
-	perror("accept(2) failedi.");
+	perror("accept(2) failed.");
         return;
     }
 
+    set_non_blocking(fd);
+    
     struct sockaddr_in da; 
     socklen_t dalen = sizeof(da);
     
@@ -347,9 +361,8 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     session->conn = stream->conn;
     memcpy(&(session->sa), (void *)&sa, salen);
     memcpy(&(session->da), (void *)&da, dalen);
-
-    HASH_ADD_INT(hh_tcp_to_quic, fd, session);
-    HASH_ADD_INT(hh_quic_to_tcp, stream_id, session);
+    
+    hash_insert(session);    
 
     frame_t ctrl_frame; 
     ctrl_frame.type = 1;
@@ -489,7 +502,9 @@ int main(int argc, char** argv)
     const char *local_host = "127.0.0.1"; 
 
     loop = EV_DEFAULT;
-
+    printf("hh_session size %ld \n", sizeof(hh_sessions));
+    bzero(hh_sessions, sizeof(hh_sessions));
+   
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);
     client_quic_socket = clt_setup_quic_connection(host, port_char);
