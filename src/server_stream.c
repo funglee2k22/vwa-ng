@@ -257,16 +257,16 @@ int srv_tcp_to_quic(int fd, char *buf, int len)
 	printf("could not find quic stream peer for tcp %d.\n", fd);	
         return -1;
     } 
-
-    quicly_stream_t *stream = NULL; 
+    
     long int stream_id = s->stream_id; 
     quicly_conn_t *conn = s->conn; 
+    quicly_stream_t *stream = quicly_get_stream(conn, stream_id); 
 
-    int ret = quicly_get_or_open_stream(conn, stream_id, &stream); 
-    if (ret != 0) { 
-        printf("failed to open stream %ld for tcp %d.\n", stream_id, fd);
+    if (!stream) { 
+        printf("failed to get stream %ld for tcp %d.\n", stream_id, fd);
         return -1;
     }
+
     quicly_streambuf_egress_write(stream, buf, len);
     //quicly_streambuf_egress_shutdown(stream);
 
@@ -279,13 +279,20 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     char buf[4096];
     int fd = w->fd, buflen = sizeof(buf);
     ssize_t read_bytes = 0;
+    static ssize_t total_size, tcp_output_thresh;
 
     while ((read_bytes = read(fd, buf, buflen)) > 0) {
+	total_size += read_bytes;
         int ret = srv_tcp_to_quic(fd, buf, read_bytes);
         if (ret != 0) {
             printf("fd: %d failed to write into quic stream.\n", fd);
 	    return;
         }
+    }
+    
+    if (total_size > tcp_output_thresh) { 
+         printf("fd %d total read %ld bytes.\n", fd, total_size);
+	 tcp_output_thresh += 10 * 1024 * 1024;
     }
 
     if (read_bytes == 0) {
@@ -297,7 +304,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     } else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    //Nothing to read.
-	    //printf("fd: %d noththing to read.\n", fd);
+	    //printf("fd: %d noththing to read errno: %d, %s.\n", fd, errno, strerror(errno));
 	} else {
 	    printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
 	    ev_io_stop(loop, w);

@@ -43,6 +43,7 @@ struct addrinfo *get_address(const char *host, const char *port)
 
 bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num_dgrams)
 {
+    static ssize_t total_quic_sent, output_thresh; 
     for(size_t i = 0; i < num_dgrams; ++i) {
         struct msghdr mess = {
             .msg_name = dest,
@@ -55,8 +56,12 @@ bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, si
         if (bytes_sent == -1) {
             perror("sendmsg failed");
             return false;
-        }
-        //printf("send_dgram_default %ld bytes sent\n", bytes_sent);
+        } 
+	total_quic_sent += bytes_sent;
+	if (total_quic_sent > output_thresh) {
+	    output_thresh += 10 * 1024 * 1024;	
+            printf("send_dgram_default total %ld bytes sent\n", total_quic_sent); 
+	}
     }
 
 
