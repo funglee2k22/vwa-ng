@@ -261,6 +261,7 @@ int srv_tcp_to_quic(int fd, char *buf, int len)
     quicly_stream_t *stream = NULL; 
     long int stream_id = s->stream_id; 
     quicly_conn_t *conn = s->conn; 
+
     int ret = quicly_get_or_open_stream(conn, stream_id, &stream); 
     if (ret != 0) { 
         printf("failed to open stream %ld for tcp %d.\n", stream_id, fd);
@@ -276,10 +277,10 @@ int srv_tcp_to_quic(int fd, char *buf, int len)
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 { 
     char buf[4096];
-    int fd = w->fd;
+    int fd = w->fd, buflen = sizeof(buf);
     ssize_t read_bytes = 0;
 
-    if((read_bytes = read(fd, buf, sizeof(buf)) > 0)) {
+    while ((read_bytes = read(fd, buf, buflen)) > 0) {
         int ret = srv_tcp_to_quic(fd, buf, read_bytes);
         if (ret != 0) {
             printf("fd: %d failed to write into quic stream.\n", fd);
@@ -289,14 +290,14 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     if (read_bytes == 0) {
          // tcp connection has been closed.
-	 printf("fd: %d remote peer closed.\n", fd);
+	 printf("fd: %d remote peer closed errno: %d, %s.\n", fd, errno, strerror(errno));
 	 ev_io_stop(loop, w);
          server_cleanup(fd);
 	 free(w);
-    } else if (read_bytes < 0) {
+    } else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    //Nothing to read.
-	    //printf("fd: %d noththing to read.\n");
+	    //printf("fd: %d noththing to read.\n", fd);
 	} else {
 	    printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
 	    ev_io_stop(loop, w);

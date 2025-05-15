@@ -102,6 +102,7 @@ void server_send_pending()
 
     int64_t now = server_ctx.now->cb(server_ctx.now);
     int64_t timeout = clamp_int64(next_timeout - now, 1, 200);
+    //timeout = 10;
     server_timeout.repeat = timeout / 1000.;
     ev_timer_again(EV_DEFAULT, &server_timeout);
 }
