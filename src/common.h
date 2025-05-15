@@ -26,10 +26,7 @@ typedef struct cpep_session {
 
 typedef struct cpep_frame { 
     int type; 
-    union { 
-        session_t s; 
-	char  payload[1024];
-    };
+    session_t s; 
 } frame_t; 
 
 ptls_context_t *get_tlsctx();

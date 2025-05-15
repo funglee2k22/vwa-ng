@@ -282,7 +282,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     
     my_debug();
 
-    while((read_bytes = read(fd, buf, sizeof(buf)) > 0)) {
+    if((read_bytes = read(fd, buf, sizeof(buf)) > 0)) {
         int ret = srv_tcp_to_quic(fd, buf, read_bytes);
         if (ret != 0) {
             printf("fd: %d failed to write into quic stream.\n", fd);
