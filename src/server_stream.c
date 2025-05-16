@@ -1,3 +1,4 @@
+#include "server.h"
 #include "server_stream.h"
 #include "common.h" 
 #include "uthash.h"
@@ -7,113 +8,55 @@
 #include <stdbool.h>
 #include <quicly/streambuf.h>
 
-extern session_t *hh_tcp_to_quic; 
-extern session_t *hh_quic_to_tcp;
+//extern session_t *hh_tcp_to_quic; 
+//extern session_t *hh_quic_to_tcp;
 extern struct ev_loop *loop;
-
-typedef struct
-{
-    uint64_t target_offset;
-    uint64_t acked_offset;
-    quicly_stream_t *stream;
-    int report_id;
-    int report_second;
-    uint64_t report_num_packets_sent;
-    uint64_t report_num_packets_lost;
-    uint64_t total_num_packets_sent;
-    uint64_t total_num_packets_lost;
-    ev_timer report_timer;
-} server_stream;
 
 int create_tcp_connection(struct sockaddr *sa);
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
-static int report_counter = 0;
 
-void server_cleanup(int fd)
-{ 
-    session_t *s = NULL;
-
-    HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
-
-    long int stream_id = (s) ? s->stream_id : -1; 
-    
-    if (s)  
-	HASH_DEL(hh_tcp_to_quic, s);
-    
-    HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s); 
-    if (s) 
-	HASH_DEL(hh_quic_to_tcp, s);
-    
-    //TODO quic stream close
-
-    close(fd);
-
-    return;
-}
-
-
-static void print_report(server_stream *s)
-{
-    quicly_stats_t stats;
-    quicly_get_stats(s->stream->conn, &stats);
-    s->report_num_packets_sent = stats.num_packets.sent - s->total_num_packets_sent;
-    s->report_num_packets_lost = stats.num_packets.lost - s->total_num_packets_lost;
-    s->total_num_packets_sent = stats.num_packets.sent;
-    s->total_num_packets_lost = stats.num_packets.lost;
-    printf("connection %i second %i send window: %"PRIu32" packets sent: %"PRIu64" packets lost: %"PRIu64"\n", s->report_id, s->report_second, stats.cc.cwnd, s->report_num_packets_sent, s->report_num_packets_lost);
-    fflush(stdout);
-    ++s->report_second;
-}
-
-static void server_report_cb(EV_P, ev_timer *w, int revents)
-{
-    print_report((server_stream*)w->data);
-}
-
-static void server_stream_destroy(quicly_stream_t *stream, quicly_error_t err)
-{
-    server_stream *s = (server_stream*)stream->data;
-    print_report(s);
-    printf("connection %i total packets sent: %"PRIu64" total packets lost: %"PRIu64"\n", s->report_id, s->total_num_packets_sent, s->total_num_packets_lost);
-    ev_timer_stop(EV_DEFAULT, &s->report_timer);
-    free(s);
-}
-
-static void server_stream_send_shift(quicly_stream_t *stream, size_t delta)
-{
-    server_stream *s = stream->data;
-    s->acked_offset += delta;
-}
-
-static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *dst, size_t *len, int *wrote_all)
-{
-    server_stream *s = stream->data;
-    uint64_t data_off = s->acked_offset + off;
-
-    if(data_off + *len < s->target_offset) {
-        *wrote_all = 0;
-    } else {
-        printf("done sending\n");
-        *wrote_all = 1;
-        *len = s->target_offset - data_off;
-        assert(data_off + *len == s->target_offset);
-    }
-
-    memset(dst, 0x58, *len);
-}
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
-    printf("server_stream_send_stop stream-id=%li\n", stream->stream_id);
+    printf("%s stream-id=%li\n", __func__, stream->stream_id);
     fprintf(stderr, "received STOP_SENDING: %li\n", err);
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
-} 
+}
+
+
+
+// tcp-side error happens, or closed. 
+// clean up 
+void server_cleanup_tcp_side(int fd)
+{ 
+    session_t *s = hash_find_by_tcp_fd(fd);
+    
+    if (s)  
+	hash_del(s);
+
+    if (fd) 
+        close(fd);
+    
+    if (s && s->conn) { 
+	long int stream_id = s->stream_id; 
+        quicly_stream_t *stream = quicly_get_stream(s->conn, stream_id);
+	if (stream) { 
+            quicly_streambuf_egress_shutdown(stream);
+            //free(stream);	    
+	} 
+    } 
+
+    if (s)  
+        free(s);
+    return;
+}
 
 
 session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
 { 
     long int stream_id = stream->stream_id;
     session_t *p = (session_t *) malloc(sizeof(session_t));
+    bzero(p, sizeof(*p));
     memcpy(p, &(ctrl_frame->s), sizeof(session_t));
     
     struct sockaddr_in *da = (struct sockaddr_in *) &(p->da);
@@ -122,14 +65,19 @@ session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
     p->conn = stream->conn;
 
     int fd = create_tcp_connection((struct sockaddr *) da);
+    if (fd < 0) { 
+        fprintf(stderr, "failed to create tcp for stream: %ld. \n", stream->stream_id);
+	free(p);
+        return NULL;	
+    }
+
     assert(fd > 0);
     set_non_blocking(fd);
     p->fd = fd;
-    printf("session quic: %ld <-> tcp: %d created.\n", stream->stream_id, fd);
+    fprintf(stdout, "session quic: %ld <-> tcp: %d created.\n", stream->stream_id, fd);
 
     //add session into hashtables 
-    HASH_ADD_INT(hh_quic_to_tcp, stream_id, p);
-    HASH_ADD_INT(hh_tcp_to_quic, fd, p);
+    hash_insert(p);
 
     //add socket read watcher
     ev_io *socket_watcher = (ev_io *)malloc(sizeof(ev_io));
@@ -142,10 +90,9 @@ session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
 
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    //printf("server stream %ld receive %ld bytes.\n", stream->stream_id, len);
     if (len == 0) 
 	return; 
-
+   
     /* read input to receive buffer */
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
@@ -153,29 +100,21 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
     quicly_stream_sync_recvbuf(stream, len);
-    
-    //printf("input.len: %ld, len: %ld, size of frame_t: %ld.\n", input.len, len, sizeof(frame_t));
-    long int l = input.len;
+
+    size_t l = input.len;
     char *base = input.base;
     long int stream_id = stream->stream_id;
-    session_t *s = NULL, *c, *tmp; 
-    
-    //HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s); 
 
-    HASH_ITER(hh, hh_quic_to_tcp, c, tmp) {
-        if (c->stream_id == stream_id) {
-            s = c;
-            break;
-        }
-    }
+    session_t *s = hash_find_by_stream_id(stream_id);
 
-    if (!s) { 
-        frame_t *ctrl_frame = (frame_t *) input.base;
+    if (!s) {
+        frame_t *ctrl_frame = (frame_t *) base;
 	if (ctrl_frame->type != 1) { 
-	    printf("error, it is not a the control stream.\n");
+	    //fprintf(stderr, "stream: %ld received %ld bytes unexpected data.\n", stream_id, len);
 	    return;
 	}
         s = handle_ctrl_frame(stream, ctrl_frame);
+	assert(s != NULL);
         s->ctrl_frame_received = true; 
 	base += sizeof(frame_t);
 	l -= sizeof(frame_t);
@@ -191,13 +130,18 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 	return;
     }
 
-    //printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes); 
+    printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes); 
     
     return; 
 
 #if 0
     if(quicly_recvstate_transfer_complete(&stream->recvstate)) {
         printf("request received, sending data\n");
+        quicly_stream_sync_sendbuf(stream, 1);
+    }
+
+    if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
+        fprintf(stderr, "stream: %ld recv completed, sending data\n", stream->stream_id);
         quicly_stream_sync_sendbuf(stream, 1);
     }
 #endif 
@@ -226,33 +170,10 @@ int create_tcp_connection(struct sockaddr *sa)
     return fd;
 } 
 
-static void add_session(int fd, long int stream_id, struct sockaddr_in *sa, struct sockaddr_in *da) 
-{ 
-    session_t *ns = (session_t *)malloc(sizeof(session_t)); 
-    ns->fd = fd; 
-    ns->stream_id = stream_id; 
-    memcpy(&(ns->sa), sa, sizeof(*sa)); 
-    memcpy(&(ns->da), da, sizeof(*da));
-    
-    session_t *s = NULL; 
-    HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
-    if (s) 
-        HASH_DEL(hh_tcp_to_quic, s); 
-    HASH_ADD_INT(hh_tcp_to_quic, fd, ns);
-
-    HASH_FIND_INT(hh_quic_to_tcp, &stream_id, s);
-    if (s) 
-	HASH_DEL(hh_quic_to_tcp, s);
-    HASH_ADD_INT(hh_quic_to_tcp, stream_id, ns); 
-
-    return;
-}
-
 int srv_tcp_to_quic(int fd, char *buf, int len)
 { 
-    session_t *s = NULL;
+    session_t *s = hash_find_by_tcp_fd(fd);
     
-    HASH_FIND_INT(hh_tcp_to_quic, &fd, s);
     if (!s) {
 	printf("could not find quic stream peer for tcp %d.\n", fd);	
         return -1;
@@ -291,15 +212,15 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     }
     
     if (total_size > tcp_output_thresh) { 
-         printf("fd %d total read %ld bytes.\n", fd, total_size);
+         fprintf(stdout, "fd %d total read %ld bytes.\n", fd, total_size);
 	 tcp_output_thresh += 10 * 1024 * 1024;
     }
 
     if (read_bytes == 0) {
          // tcp connection has been closed.
-	 printf("fd: %d remote peer closed errno: %d, %s.\n", fd, errno, strerror(errno));
+	 fprintf(stderr, "fd: %d remote peer closed.\n", fd);
 	 ev_io_stop(loop, w);
-         server_cleanup(fd);
+         server_cleanup_tcp_side(fd);
 	 free(w);
     } else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -308,7 +229,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 	} else {
 	    printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
 	    ev_io_stop(loop, w);
-	    server_cleanup(fd);
+	    server_cleanup_tcp_side(fd);
 	    free(w);
 	}
     }

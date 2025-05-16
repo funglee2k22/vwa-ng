@@ -24,8 +24,73 @@ static ev_timer server_timeout;
 static quicly_cid_plaintext_t next_cid;
 struct ev_loop *loop = NULL; 
 
-session_t *hh_tcp_to_quic = NULL;
-session_t *hh_quic_to_tcp = NULL; 
+//session_t *hh_tcp_to_quic = NULL;
+//session_t *hh_quic_to_tcp = NULL; 
+session_t *hh_sessions[HASH_SIZE] = {0};
+
+
+session_t *hash_find_by_tcp_fd(int fd)
+{
+    session_t *r = NULL;
+    int i = 0;
+
+    for (i = 0; i < HASH_SIZE; ++i) {
+	session_t *p = hh_sessions[i];
+        if ((p) && (p->fd == fd)) {
+	    r = p;
+	    break;
+	}
+    }
+
+    return r;
+}
+
+session_t *hash_find_by_stream_id(long int stream_id)
+{
+    session_t *r = NULL;
+    int i = 0;
+    for (i = 0; i < HASH_SIZE; ++i) {
+        session_t *p = hh_sessions[i];
+        if (p && (p->stream_id == stream_id)) {
+	    r = p;
+	    break;
+        }
+    }
+    return r;
+}
+
+void hash_insert(session_t *s)
+{
+    session_t *r = hash_find_by_tcp_fd(s->fd);
+
+    if (r) {
+	//do update
+	r->stream_id = s->stream_id;
+        return;
+    }
+
+    int i = 0;
+    for (i = 0; i < HASH_SIZE; ++i) {
+	session_t *p = hh_sessions[i];
+        if (!p) {
+	    hh_sessions[i] = s;
+	    return;
+	}
+    }
+    return;
+}
+
+void hash_del(session_t *s)
+{
+    int i = 0;
+    for (i = 0; i < HASH_SIZE; ++i) {
+	session_t *p = hh_sessions[i];
+        if ((p) && (p == s)) {
+	     hh_sessions[i] = NULL;
+	     return;
+	}
+    }
+}
 
 
 static int udp_listen(struct addrinfo *addr)
@@ -92,8 +157,8 @@ static void server_timeout_cb(EV_P_ ev_timer *w, int revents);
 void server_send_pending()
 {
     int64_t next_timeout = INT64_MAX;
-    for(size_t i = 0; i < num_conns; ++i) {
-        if(!send_pending(&server_ctx, udp_server_socket, conns[i])) {
+    for (size_t i = 0; i < num_conns; ++i) {
+        if (!send_pending(&server_ctx, udp_server_socket, conns[i])) {
 	    i = remove_conn(i);
         } else {
             next_timeout = min_int64(quicly_get_first_timeout(conns[i]), next_timeout);
@@ -102,7 +167,6 @@ void server_send_pending()
 
     int64_t now = server_ctx.now->cb(server_ctx.now);
     int64_t timeout = clamp_int64(next_timeout - now, 1, 200);
-    //timeout = 10;
     server_timeout.repeat = timeout / 1000.;
     ev_timer_again(EV_DEFAULT, &server_timeout);
 }
@@ -115,20 +179,19 @@ static void server_timeout_cb(EV_P_ ev_timer *w, int revents)
 static inline void server_handle_packet(quicly_decoded_packet_t *packet, struct sockaddr_storage *sa, socklen_t salen)
 {
     quicly_conn_t *conn = find_conn(sa, salen, packet);
-    if(conn == NULL) {
+    if (conn == NULL) {
         // new conn
         int ret = quicly_accept(&conn, &server_ctx, 0, (struct sockaddr *) sa, packet, NULL, &next_cid, NULL, NULL);
-        if(ret != 0) {
+        if (ret != 0) {
             printf("quicly_accept failed with code %i\n", ret);
             return;
         }
         ++next_cid.master_id;
         printf("got new connection\n");
         append_conn(conn);
-
     } else {
         int ret = quicly_receive(conn, NULL, (struct sockaddr *) sa, packet);
-        if(ret != 0 && ret != QUICLY_ERROR_PACKET_IGNORED) {
+        if (ret != 0 && ret != QUICLY_ERROR_PACKET_IGNORED) {
             fprintf(stderr, "quicly_receive returned %i\n", ret);
             exit(1);
         }
@@ -144,19 +207,19 @@ static void server_read_cb(EV_P_ ev_io *w, int revents)
     quicly_decoded_packet_t packet;
     ssize_t bytes_received;
 
-    while((bytes_received = recvfrom(w->fd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *)&sa, &salen)) != -1) {
-        for(size_t offset = 0; offset < bytes_received; ) {
+    while ((bytes_received = recvfrom(w->fd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *)&sa, &salen)) != -1) {
+        for (size_t offset = 0; offset < bytes_received; ) {
             size_t packet_len = quicly_decode_packet(&server_ctx, &packet, buf, bytes_received, &offset);
-            if(packet_len == SIZE_MAX) {
+            if (packet_len == SIZE_MAX) {
                 break;
             }
-	    
             server_handle_packet(&packet, &sa, salen);
         }
     }
 
-    if(errno != EWOULDBLOCK && errno != 0) {
+    if (errno != EWOULDBLOCK && errno != 0) {
         perror("recvfrom failed");
+        fprintf(stderr, "udp sk %d recvfrom() returns with errno %d, %s.\n", w->fd, errno, strerror(errno));	
     }
 
     server_send_pending();
@@ -199,7 +262,7 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
 
     struct addrinfo *addr = get_address(address, port);
     if (addr == NULL) {
-        printf("failed get addrinfo for port %s\n", port);
+        fprintf(stderr, "failed get addrinfo for addr %s port %s\n", address, port);
         return -1;
     }
     
@@ -207,11 +270,11 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
     freeaddrinfo(addr);
     
     if (server_socket == -1) {
-        printf("failed to listen on port %s\n", port);
+        fprintf(stderr, "failed to listen on addr %s port %s\n", address, port);
         return -1;
     }
 
-    printf("starting server with pid %" PRIu64 ", address %s, port %s\n", get_current_pid(), address, port);
+    fprintf(stdout, "starting server with pid %" PRIu64 ", address %s, port %s\n", get_current_pid(), address, port);
 
     return server_socket;
 }
@@ -223,6 +286,9 @@ int main(int argc, char** argv)
     const char *logfile = NULL;
     const char *keyfile = "server.key";
     const char *certfile = "server.crt";
+
+    //TODO change this to HASH table 
+    bzero((void *) hh_sessions, sizeof(hh_sessions));
 
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);
