@@ -12,90 +12,44 @@
 //extern session_t *hh_quic_to_tcp;
 extern struct ev_loop *loop;
 
-typedef struct
-{
-    uint64_t target_offset;
-    uint64_t acked_offset;
-    quicly_stream_t *stream;
-    int report_id;
-    int report_second;
-    uint64_t report_num_packets_sent;
-    uint64_t report_num_packets_lost;
-    uint64_t total_num_packets_sent;
-    uint64_t total_num_packets_lost;
-    ev_timer report_timer;
-} server_stream;
-
 int create_tcp_connection(struct sockaddr *sa);
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
 
-void server_cleanup(int fd)
-{ 
-    session_t *s = hash_find_by_tcp_fd(fd);
-    long int stream_id = (s) ? s->stream_id : -1; 
-    if (s)  
-	hash_del(s);
-    close(fd);
-    free(s);
-    return;
-}
-
-static void print_report(server_stream *s)
-{
-    quicly_stats_t stats;
-    quicly_get_stats(s->stream->conn, &stats);
-    s->report_num_packets_sent = stats.num_packets.sent - s->total_num_packets_sent;
-    s->report_num_packets_lost = stats.num_packets.lost - s->total_num_packets_lost;
-    s->total_num_packets_sent = stats.num_packets.sent;
-    s->total_num_packets_lost = stats.num_packets.lost;
-    printf("connection %i second %i send window: %"PRIu32" packets sent: %"PRIu64" packets lost: %"PRIu64"\n", s->report_id, s->report_second, stats.cc.cwnd, s->report_num_packets_sent, s->report_num_packets_lost);
-    fflush(stdout);
-    ++s->report_second;
-}
-
-static void server_report_cb(EV_P, ev_timer *w, int revents)
-{
-    print_report((server_stream*)w->data);
-}
-
-static void server_stream_destroy(quicly_stream_t *stream, quicly_error_t err)
-{
-    server_stream *s = (server_stream*)stream->data;
-    print_report(s);
-    printf("connection %i total packets sent: %"PRIu64" total packets lost: %"PRIu64"\n", s->report_id, s->total_num_packets_sent, s->total_num_packets_lost);
-    ev_timer_stop(EV_DEFAULT, &s->report_timer);
-    free(s);
-}
-
-static void server_stream_send_shift(quicly_stream_t *stream, size_t delta)
-{
-    server_stream *s = stream->data;
-    s->acked_offset += delta;
-}
-
-static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *dst, size_t *len, int *wrote_all)
-{
-    server_stream *s = stream->data;
-    uint64_t data_off = s->acked_offset + off;
-
-    if(data_off + *len < s->target_offset) {
-        *wrote_all = 0;
-    } else {
-        printf("done sending\n");
-        *wrote_all = 1;
-        *len = s->target_offset - data_off;
-        assert(data_off + *len == s->target_offset);
-    }
-
-    memset(dst, 0x58, *len);
-}
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
-    printf("server_stream_send_stop stream-id=%li\n", stream->stream_id);
+    printf("%s stream-id=%li\n", __func__, stream->stream_id);
     fprintf(stderr, "received STOP_SENDING: %li\n", err);
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
-} 
+}
+
+
+
+// tcp-side error happens, or closed. 
+// clean up 
+void server_cleanup_tcp_side(int fd)
+{ 
+    session_t *s = hash_find_by_tcp_fd(fd);
+    
+    if (s)  
+	hash_del(s);
+
+    if (fd) 
+        close(fd);
+    
+    if (s && s->conn) { 
+	long int stream_id = s->stream_id; 
+        quicly_stream_t *stream = quicly_get_stream(s->conn, stream_id);
+	if (stream) { 
+            quicly_streambuf_egress_shutdown(stream);
+            //free(stream);	    
+	} 
+    } 
+
+    if (s)  
+        free(s);
+    return;
+}
 
 
 session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
@@ -264,9 +218,9 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     if (read_bytes == 0) {
          // tcp connection has been closed.
-	 fprintf(stderr, "fd: %d remote peer closed errno: %d, %s.\n", fd, errno, strerror(errno));
+	 fprintf(stderr, "fd: %d remote peer closed.\n", fd);
 	 ev_io_stop(loop, w);
-         server_cleanup(fd);
+         server_cleanup_tcp_side(fd);
 	 free(w);
     } else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -275,7 +229,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 	} else {
 	    printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
 	    ev_io_stop(loop, w);
-	    server_cleanup(fd);
+	    server_cleanup_tcp_side(fd);
 	    free(w);
 	}
     }
