@@ -57,7 +57,12 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
          return;
 
     long int stream_id = stream->stream_id;
-    session_t *session = hash_find_by_stream_id(stream_id); 
+    session_t *session = hash_find_by_stream_id(stream_id);
+
+    if (!session) { 
+	 //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
+	 return; 
+    }
     assert(session != NULL);
 
     int tcp_fd = session->fd;
@@ -72,6 +77,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
 	client_cleanup(tcp_fd); 
     } 
 
+cleanup: 
     quicly_stream_sync_recvbuf(stream, len);
 
     return;

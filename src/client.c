@@ -32,7 +32,7 @@ struct ev_loop *loop = NULL;
 //session_t *hh_quic_to_tcp[1024] = {NULL}; 
 //session_t *hh_tcp_to_quic[1024] = {NULL}; 
 
-session_t *hh_sessions[1024] = {NULL};
+session_t *hh_sessions[HASH_SIZE] = {NULL};
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
@@ -71,7 +71,7 @@ session_t *hash_find_by_stream_id(long int stream_id)
     int i = 0;
     for (i = 0; i < HASH_SIZE - 1; ++i) {
         session_t *p = hh_sessions[i];
-        if ((p) && (p->stream_id) == stream_id) { 
+        if ((p) && (p->stream_id == stream_id)) { 
 	    r = p; 
 	    break;
         }
