@@ -269,9 +269,8 @@ void client_cleanup(int fd)
 	hash_del(s);
     }
 
-    free(s);
+    //free(s);
     close(fd);
-
     return;
 } 	
 

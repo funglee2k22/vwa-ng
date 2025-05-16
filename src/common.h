@@ -2,6 +2,9 @@
 
 #include "uthash.h"
 
+#include <execinfo.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <quicly.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -9,6 +12,8 @@
 #include <sys/syscall.h>
 
 #define my_debug()  printf("func: %s, line: %d: we are good here.\n",  __func__, __LINE__); fflush(stdout);
+
+void print_trace (void);
 
 typedef struct cpep_session { 
     long int stream_id;      // on both client and server, stream_id is the key 

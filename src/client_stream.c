@@ -39,7 +39,7 @@ static void report_cb(EV_P_ ev_timer *w, int revents)
     bytes_received = 0;
 
     if(current_second >= runtime_s) {
-        quit_client();
+        //quit_client();
     }
 }
 
@@ -69,12 +69,19 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     //ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
     //ssize_t bytes_sent = send(tcp_fd, input.base, input.len);
     
-    ssize_t bytes_sent = write(tcp_fd, src, len);
+    ssize_t bytes_sent = -1; 
+    while ((bytes_sent = write(tcp_fd, src, len) == -1) && (errno == EAGAIN)) {  // || errno == EWOULDBLOCK)) 
+	usleep(50);
+    }	
 
     if (bytes_sent == -1) {
-        fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno)); 
-        //TODO should we close stream also ?
-	client_cleanup(tcp_fd); 
+	if (errno == EAGAIN || errno == EWOULDBLOCK) { 
+            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno)); 
+	} else { 
+            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno)); 
+            //TODO should we close stream also ?
+	    //client_cleanup(tcp_fd);
+	}
     } 
 
 cleanup: 
