@@ -43,7 +43,7 @@ struct addrinfo *get_address(const char *host, const char *port)
 
 bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num_dgrams)
 {
-    static ssize_t total_quic_sent, output_thresh; 
+    static ssize_t total_quic_sent, output_thresh;
     for(size_t i = 0; i < num_dgrams; ++i) {
         struct msghdr mess = {
             .msg_name = dest,
@@ -52,25 +52,23 @@ bool send_dgrams_default(int fd, struct sockaddr *dest, struct iovec *dgrams, si
         };
 
         ssize_t bytes_sent;
-        while ((bytes_sent = sendmsg(fd, &mess, 0)) == -1 && errno == EINTR);
+        while ((bytes_sent = sendmsg(fd, &mess, 0)) == -1 && errno == EINTR)
+            ;
+
         if (bytes_sent == -1) {
             perror("sendmsg failed");
             return false;
-        } 
-	total_quic_sent += bytes_sent;
-	if (total_quic_sent >= output_thresh) {
-	    output_thresh += 10 * 1024 * 1024;	
-            printf("send_dgram_default total %ld bytes sent\n", total_quic_sent); 
-	}
+        }
+        total_quic_sent += bytes_sent;
+        if (total_quic_sent >= output_thresh) {
+            output_thresh += 10 * 1024 * 1024;
+            printf("send_dgram_default total %ld bytes sent\n", total_quic_sent);
+        }
     }
-
-
-
     return true;
 }
 
 bool (*send_dgrams)(int fd, struct sockaddr *dest, struct iovec *dgrams, size_t num_dgrams) = send_dgrams_default;
-
 
 bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
 {
@@ -81,7 +79,7 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
     uint8_t dgrams_buf[PTLS_ELEMENTSOF(dgrams) * ctx->transport_params.max_udp_payload_size];
     size_t num_dgrams = SEND_BATCH_SIZE;
     size_t send_dgrams_c = 0;
-    
+
     while(true) {
         num_dgrams = PTLS_ELEMENTSOF(dgrams);
         int quicly_res = quicly_send(conn, &dest, &src, dgrams, &num_dgrams, &dgrams_buf, sizeof(dgrams_buf));
@@ -90,28 +88,29 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
             if(quicly_res != QUICLY_ERROR_FREE_CONNECTION) {
                 printf("quicly_send failed with code %i\n", quicly_res);
             } else {
-                printf("connection closed\n");
+                printf("connection closed (closeable) \n");
             }
             return false;
-        } else if(num_dgrams == 0) {
+        } else if(num_dgrams == 0) { //nothing to send
             return true;
         }
 
         if (!send_dgrams(fd, &dest.sa, dgrams, num_dgrams)) {
             return false;
         }
-    };
+    }
+    return true;
 }
 
 
 int set_non_blocking(int sockfd)
 {
-  int flags = fcntl(sockfd, F_GETFL, 0);
-  if(fcntl(sockfd, F_SETFL, (flags < 0 ? 0 : flags) | O_NONBLOCK) == -1) {
-    perror("set_non_blocking");
-    return -1;
-  }
-  return 0;
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    if (fcntl(sockfd, F_SETFL, (flags < 0 ? 0 : flags) | O_NONBLOCK) == -1) {
+        perror("set_non_blocking");
+        return -1;
+    }
+    return 0;
 }
 
 void print_trace (void)

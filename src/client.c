@@ -29,8 +29,8 @@ static int64_t connect_time = 0;
 static ptls_iovec_t resumption_token;
 
 struct ev_loop *loop = NULL;
-//session_t *hh_quic_to_tcp[1024] = {NULL}; 
-//session_t *hh_tcp_to_quic[1024] = {NULL}; 
+//session_t *hh_quic_to_tcp[1024] = {NULL};
+//session_t *hh_tcp_to_quic[1024] = {NULL};
 
 session_t *hh_sessions[HASH_SIZE] = {NULL};
 
@@ -41,7 +41,7 @@ static quicly_stream_open_t stream_open = {&client_on_stream_open};
 
 static quicly_closed_by_remote_t closed_by_remote = {&client_on_conn_close};
 
-void client_timeout_cb(EV_P_ ev_timer *w, int revents); 
+void client_timeout_cb(EV_P_ ev_timer *w, int revents);
 
 #define HASH_SIZE 1024
 session_t *hash_find_by_tcp_fd(int fd);
@@ -50,65 +50,63 @@ void hash_insert(session_t *s);
 void hash_del(session_t *s);
 
 session_t *hash_find_by_tcp_fd(int fd)
-{ 
+{
     session_t *r = NULL;
     int i = 0;
-
-    for (i = 0; i < HASH_SIZE; ++i) { 
-	session_t *p = hh_sessions[i];
-        if ((p) && (p->fd == fd)) { 
-	    r = p;
-	    break;
-	}
-    } 
-    
+    for (i = 0; i < HASH_SIZE; ++i) {
+        session_t *p = hh_sessions[i];
+        if ((p) && (p->fd == fd)) {
+            r = p;
+            break;
+        }
+    }
     return r;
-} 
+}
 
 session_t *hash_find_by_stream_id(long int stream_id)
-{ 
+{
     session_t *r = NULL;
     int i = 0;
     for (i = 0; i < HASH_SIZE - 1; ++i) {
         session_t *p = hh_sessions[i];
-        if ((p) && (p->stream_id == stream_id)) { 
-	    r = p; 
-	    break;
+        if ((p) && (p->stream_id == stream_id)) {
+            r = p;
+            break;
         }
-    } 
+    }
     return r;
-} 
-  
+}
+
 void hash_insert(session_t *s)
 {
     session_t *r = hash_find_by_tcp_fd(s->fd);
-    
-    if (r) { 
-	//do update 
-	r->stream_id = s->stream_id;    
+
+    if (r) {
+        //do update
+        r->stream_id = s->stream_id;
         return;
     }
 
     int i = 0;
-    for (i = 0; i < HASH_SIZE; ++i) { 
-	session_t *p = hh_sessions[i];
-        if (!p) { 
-	    hh_sessions[i] = s;
-	    return; 
-	}
-    } 
+    for (i = 0; i < HASH_SIZE; ++i) {
+        session_t *p = hh_sessions[i];
+        if (!p) {
+            hh_sessions[i] = s;
+            return;
+        }
+    }
     return;
 }
 
-void hash_del(session_t *s) 
-{ 
+void hash_del(session_t *s)
+{
     int i = 0;
-    for (i = 0; i < HASH_SIZE; ++i) { 
-	session_t *p = hh_sessions[i];
-        if ((p) && (p == s)) { 
-	     hh_sessions[i] = NULL;
-	     return;
-	}
+    for (i = 0; i < HASH_SIZE; ++i) {
+        session_t *p = hh_sessions[i];
+        if ((p) && (p == s)) {
+            hh_sessions[i] = NULL;
+            return;
+        }
     }
 }
 
@@ -122,22 +120,19 @@ void client_refresh_timeout()
 }
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents)
-{ 
-    static int count; 
+{
+    static int count;
 
     count++;
-
-    if ((count % 10) == 0) { 
+    if ((count % 10) == 0) {
          printf("timeout_cb count %d\n", count);
     }
 
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
+        my_debug();
         quicly_free(conn);
         exit(0);
     }
-
-    
-
     client_refresh_timeout();
 }
 
@@ -149,15 +144,15 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
     socklen_t salen = sizeof(sa);
     quicly_decoded_packet_t packet;
     ssize_t bytes_received;
-    static ssize_t quic_total_received, quic_output_thresh; 
+    static ssize_t quic_total_received, quic_output_thresh;
 
     while ((bytes_received = recvfrom(w->fd, buf, sizeof(buf), MSG_DONTWAIT,(struct sockaddr *) &sa, &salen)) != -1) {
-        
-	quic_total_received += bytes_received; 
-        if (quic_total_received >= quic_output_thresh) { 
-	   printf("quic-udp total received %ld bytes.\n", quic_total_received);
-	   quic_output_thresh += 1024 * 1024 * 10;
-	}
+
+        quic_total_received += bytes_received;
+        if (quic_total_received >= quic_output_thresh) {
+            printf("quic-udp total received %ld bytes.\n", quic_total_received);
+            quic_output_thresh += 1024 * 1024 * 10;
+        }
 
         for(size_t offset = 0; offset < bytes_received; ) {
             size_t packet_len = quicly_decode_packet(&client_ctx, &packet, buf, bytes_received, &offset);
@@ -186,6 +181,7 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
     }
 
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
+        my_debug();
         quicly_free(conn);
         exit(0);
     }
@@ -199,8 +195,8 @@ void enqueue_request(quicly_conn_t *conn)
     int ret = quicly_open_stream(conn, &stream, 0);
     assert(ret == 0);
     const char *req = "quic-pep client start a connection";
-   
-    ctrl_stream = stream; 
+
+    ctrl_stream = stream;
 
     quicly_streambuf_egress_write(stream, req, strlen(req));
     //quicly_streambuf_egress_shutdown(stream);
@@ -229,111 +225,112 @@ void quit_client()
     }
 
     quicly_close(conn, 0, "");
+
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         printf("send_pending failed during connection close");
         quicly_free(conn);
         exit(0);
     }
     client_refresh_timeout();
-} 
+}
 
-static inline int clt_tcp_to_quic(int fd, void *buf, int len) 
+static inline int clt_tcp_to_quic(int fd, void *buf, int len)
 {
-    session_t *s = hash_find_by_tcp_fd(fd); 
+    session_t *s = hash_find_by_tcp_fd(fd);
     assert(s != NULL);
-    
-    if (!s) { 
-        printf("could not find session for tcp %d\n", fd);
-        return -1;	
-    }	
 
-    long int sid = s->stream_id; 
-    assert(sid > 0); 
+    if (!s) {
+        printf("could not find session for tcp %d\n", fd);
+        return -1;
+    }
+
+    long int sid = s->stream_id;
+    assert(sid > 0);
 
     quicly_stream_t *stream = quicly_get_stream(conn, sid);
     assert(stream != NULL);
- 
+
     quicly_streambuf_egress_write(stream, buf, len);
-    //quicly_streambuf_egress_shutdown(stream); 
+    //quicly_streambuf_egress_shutdown(stream);
     printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
-    
+
     return 0;
-    
+
 }
 
-void client_cleanup(int fd) 
-{ 
-    session_t *s = hash_find_by_tcp_fd(fd); 
-    
-    if (s) { 
-	hash_del(s);
+void client_cleanup(int fd)
+{
+    session_t *s = hash_find_by_tcp_fd(fd);
+
+    if (s) {
+        hash_del(s);
     }
 
-    //free(s);
+    free(s);
     close(fd);
     return;
-} 	
+}
 
 void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
-{ 
-    char buf[4096]; 
+{
+    char buf[4096];
     int fd = w->fd;
-    ssize_t read_bytes = 0; 
-    static ssize_t total_read_bytes, clt_tcp_output_thresh; 
+    ssize_t read_bytes = 0;
+    static ssize_t total_read_bytes, clt_tcp_output_thresh;
 
     while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
-	total_read_bytes += read_bytes;
+    total_read_bytes += read_bytes;
         int ret = clt_tcp_to_quic(fd, buf, read_bytes);
-        if (ret != 0) { 
+        if (ret != 0) {
             printf("fd: %d failed to write into quic stream.\n", fd);
-	    return;
+            return;
         }
-    } 
+    }
 
-    if (total_read_bytes >= clt_tcp_output_thresh) { 
-	printf("clt tcp fd: %d, total read %ld bytes.\n", fd, total_read_bytes);
-	clt_tcp_output_thresh += 1024 * 10;
-    }	
-    
-    if (read_bytes == 0) { 
-         // tcp connection has been closed. 
-	 printf("fd: %d remote peer closed.\n", fd); 
-	 ev_io_stop(loop, w);
-         client_cleanup(fd);
-	 free(w);
-    } else if (read_bytes < 0) { 
-        if (errno == EAGAIN || errno == EWOULDBLOCK) { 
-	    //Nothing to read. 
-	    //printf("fd: %d noththing to read.\n");
-	} else {
-	    printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
-	    ev_io_stop(loop, w); 
-	    client_cleanup(fd);
-	    free(w);
-	}
-    } 
+    if (total_read_bytes >= clt_tcp_output_thresh) {
+        printf("clt tcp fd: %d, total read %ld bytes.\n", fd, total_read_bytes);
+        clt_tcp_output_thresh += 1024 * 10;
+    }
+
+    if (read_bytes == 0) {
+         // tcp connection has been closed.
+        printf("fd: %d remote peer closed.\n", fd);
+        ev_io_stop(loop, w);
+        client_cleanup(fd);
+        //free(w);
+    } else if (read_bytes < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        //Nothing to read.
+        //printf("fd: %d noththing to read.\n");
+        } else {
+            printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
+            ev_io_stop(loop, w);
+            client_cleanup(fd);
+            free(w);
+        }
+    }
 
     client_refresh_timeout();
-    return; 
-}    
+    return;
+}
 
 void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
 {
-    int fd = -1; 
-    struct sockaddr_in sa; 
+    int fd = -1;
+    struct sockaddr_in sa;
     socklen_t salen = sizeof(sa);
-    
-    fd = accept(w->fd, (struct sockaddr *)&sa, &salen); 
-    if (fd < 0) { 
-	perror("accept(2) failed.");
+
+    fd = accept(w->fd, (struct sockaddr *)&sa, &salen);
+    if (fd < 0) {
+    perror("accept(2) failed.");
         return;
     }
 
     set_non_blocking(fd);
-    
-    struct sockaddr_in da; 
+
+    struct sockaddr_in da;
     socklen_t dalen = sizeof(da);
-    
+
 #ifndef SO_ORIGINAL_DST
 #define SO_ORIGINAL_DST 80
 #endif
@@ -343,42 +340,42 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
         return;
     }
 
-    printf("Accepted client %s:%d -> %s:%d on fd %d\n", 
-		   inet_ntoa(sa.sin_addr), ntohs(sa.sin_port),
+    printf("Accepted client %s:%d -> %s:%d on fd %d\n",
+           inet_ntoa(sa.sin_addr), ntohs(sa.sin_port),
                    inet_ntoa(da.sin_addr), ntohs(da.sin_port),
-		   fd);
-    
-    //open quicly stream; 
+           fd);
+
+    //open quicly stream;
     quicly_stream_t *stream = NULL;
-    int ret = quicly_open_stream(conn, &stream, 0);   
+    int ret = quicly_open_stream(conn, &stream, 0);
     assert(ret == 0);
 
     long int stream_id = stream->stream_id;
-    session_t *session = (session_t *)malloc(sizeof(session_t)); 
+    session_t *session = (session_t *)malloc(sizeof(session_t));
     session->fd = fd;
     session->stream_id = stream->stream_id;
     session->conn = stream->conn;
     memcpy(&(session->sa), (void *)&sa, salen);
     memcpy(&(session->da), (void *)&da, dalen);
-    
-    hash_insert(session);    
 
-    frame_t ctrl_frame; 
+    hash_insert(session);
+
+    frame_t ctrl_frame;
     ctrl_frame.type = 1;
     memcpy(&(ctrl_frame.s), session, sizeof(session_t));
 
     //send clt side session info to server;
     quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));
-    //quicly_streambuf_egress_shutdown(stream); 
+    //quicly_streambuf_egress_shutdown(stream);
 
-    ev_io *client_tcp_socket_watcher = (ev_io *)malloc(sizeof(ev_io)); 
+    ev_io *client_tcp_socket_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(client_tcp_socket_watcher, client_tcp_read_cb, fd, EV_READ);
     ev_io_start(loop, client_tcp_socket_watcher);
 
     client_refresh_timeout();
-   
+
     return;
-} 
+}
 
 
 int clt_setup_tcp_listener(const char *host, const char *port)
@@ -388,34 +385,34 @@ int clt_setup_tcp_listener(const char *host, const char *port)
 
     int fd = -1;
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket(2) failed."); 
-	exit(-1);
+        perror("socket(2) failed.");
+    exit(-1);
     }
 
     if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &(int){1}, sizeof(int)) != 0) {
-	perror("setsockopt(IP_TRANSPARENT) failed.");
-        return -1; 
+    perror("setsockopt(IP_TRANSPARENT) failed.");
+        return -1;
     }
 
-    memset(&sa, 0, salen); 
-    sa.sin_family = AF_INET; 
+    memset(&sa, 0, salen);
+    sa.sin_family = AF_INET;
     sa.sin_port = htons(atoi(port));
     sa.sin_addr.s_addr = htonl(INADDR_ANY);
-    
-    if (bind(fd, (void *)&sa, sizeof(sa)) != 0) { 
-	perror("bind(2) failed.");
-	return -1;
-    } 
 
-    if (listen(fd, 128) != 0) { 
-	perror("listen(2) failed.");
-	return -1;
-    } 
-    
+    if (bind(fd, (void *)&sa, sizeof(sa)) != 0) {
+    perror("bind(2) failed.");
+    return -1;
+    }
+
+    if (listen(fd, 128) != 0) {
+    perror("listen(2) failed.");
+    return -1;
+    }
+
     return fd;
 }
 
-int clt_setup_quic_connection(const char *host, const char *port) 
+int clt_setup_quic_connection(const char *host, const char *port)
 {
     setup_session_cache(get_tlsctx());
     quicly_amend_ptls_context(get_tlsctx());
@@ -495,15 +492,15 @@ int clt_setup_quic_connection(const char *host, const char *port)
 int main(int argc, char** argv)
 {
     int port = 4433;
-    int tcp_port = 8443; 
+    int tcp_port = 8443;
     const char *host = "192.168.30.1";
     const char *logfile = NULL;
-    const char *local_host = "127.0.0.1"; 
+    const char *local_host = "127.0.0.1";
 
     loop = EV_DEFAULT;
     printf("hh_session size %ld \n", sizeof(hh_sessions));
     bzero(hh_sessions, sizeof(hh_sessions));
-   
+
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);
     client_quic_socket = clt_setup_quic_connection(host, port_char);
@@ -517,7 +514,7 @@ int main(int argc, char** argv)
     ev_io quic_socket_watcher, tcp_socket_accept_watcher;
     ev_io_init(&quic_socket_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
     ev_io_start(loop, &quic_socket_watcher);
-     
+
     ev_io_init(&tcp_socket_accept_watcher, &client_tcp_accept_cb, client_tcp_socket, EV_READ);
     ev_io_start(loop, &tcp_socket_accept_watcher);
 

@@ -50,8 +50,8 @@ static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    if (len == 0) 
-	return; 
+    if (len == 0)
+    return;
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
          return;
@@ -59,44 +59,43 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     long int stream_id = stream->stream_id;
     session_t *session = hash_find_by_stream_id(stream_id);
 
-    if (!session) { 
-	 //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
-	 return; 
+    if (!session) {
+     //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
+     return;
     }
     assert(session != NULL);
 
     int tcp_fd = session->fd;
-    //ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    //ssize_t bytes_sent = send(tcp_fd, input.base, input.len);
-    
-    ssize_t bytes_sent = -1; 
-    while ((bytes_sent = write(tcp_fd, src, len) == -1) && (errno == EAGAIN)) {  // || errno == EWOULDBLOCK)) 
-	usleep(50);
-    }	
+
+    ssize_t bytes_sent = -1;
+    while ((bytes_sent = write(tcp_fd, src, len) == -1) && (errno == EAGAIN)) {  // || errno == EWOULDBLOCK))
+        ;
+    }
 
     if (bytes_sent == -1) {
-	if (errno == EAGAIN || errno == EWOULDBLOCK) { 
-            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno)); 
-	} else { 
-            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno)); 
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno));
+        } else {
+            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno));
             //TODO should we close stream also ?
-	    //client_cleanup(tcp_fd);
-	}
-    } 
+            //client_cleanup(tcp_fd);
+            //quicly_streambuf_destroy(stream, QUICLY_ERROR_STREAM_STATE);
+            return;
+        }
+    }
 
-cleanup: 
+cleanup:
     quicly_stream_sync_recvbuf(stream, len);
 
     return;
 }
 
-
 static void client_ctrl_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    if (len == 0) return; 
-    fprintf(stdout, "ctrl stream receive %zu bytes.\n", len);    
-    //TODO 
-    //client side ctrl stream handling. 
+    if (len == 0) return;
+    fprintf(stdout, "ctrl stream receive %zu bytes.\n", len);
+    //TODO
+    //client side ctrl stream handling.
     quicly_stream_sync_recvbuf(stream, len);
 }
 
@@ -114,7 +113,7 @@ static const quicly_stream_callbacks_t client_stream_callbacks = {
     &client_stream_receive_reset
 };
 
-static const quicly_stream_callbacks_t client_ctrl_stream_callbacks = { 
+static const quicly_stream_callbacks_t client_ctrl_stream_callbacks = {
     &quicly_streambuf_destroy,
     &quicly_streambuf_egress_shift,
     &quicly_streambuf_egress_emit,
@@ -128,14 +127,13 @@ quicly_error_t client_on_stream_open(quicly_stream_open_t *self, quicly_stream_t
     int ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t));
     assert(ret == 0);
 
-    if (stream->stream_id == 0) 
+    if (stream->stream_id == 0)
         stream->callbacks = &client_ctrl_stream_callbacks;
     else
         stream->callbacks = &client_stream_callbacks;
 
     return 0;
 }
-
 
 void client_set_quit_after(int seconds)
 {

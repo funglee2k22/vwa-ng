@@ -22,10 +22,10 @@ static quicly_context_t server_ctx;
 static size_t num_conns = 0;
 static ev_timer server_timeout;
 static quicly_cid_plaintext_t next_cid;
-struct ev_loop *loop = NULL; 
+struct ev_loop *loop = NULL;
 
 //session_t *hh_tcp_to_quic = NULL;
-//session_t *hh_quic_to_tcp = NULL; 
+//session_t *hh_quic_to_tcp = NULL;
 session_t *hh_sessions[HASH_SIZE] = {0};
 
 
@@ -35,11 +35,11 @@ session_t *hash_find_by_tcp_fd(int fd)
     int i = 0;
 
     for (i = 0; i < HASH_SIZE; ++i) {
-	session_t *p = hh_sessions[i];
+        session_t *p = hh_sessions[i];
         if ((p) && (p->fd == fd)) {
-	    r = p;
-	    break;
-	}
+            r = p;
+            break;
+        }
     }
 
     return r;
@@ -52,8 +52,8 @@ session_t *hash_find_by_stream_id(long int stream_id)
     for (i = 0; i < HASH_SIZE; ++i) {
         session_t *p = hh_sessions[i];
         if (p && (p->stream_id == stream_id)) {
-	    r = p;
-	    break;
+            r = p;
+            break;
         }
     }
     return r;
@@ -64,18 +64,18 @@ void hash_insert(session_t *s)
     session_t *r = hash_find_by_tcp_fd(s->fd);
 
     if (r) {
-	//do update
-	r->stream_id = s->stream_id;
+        //do update
+        r->stream_id = s->stream_id;
         return;
     }
 
     int i = 0;
     for (i = 0; i < HASH_SIZE; ++i) {
-	session_t *p = hh_sessions[i];
+        session_t *p = hh_sessions[i];
         if (!p) {
-	    hh_sessions[i] = s;
-	    return;
-	}
+            hh_sessions[i] = s;
+            return;
+        }
     }
     return;
 }
@@ -84,11 +84,11 @@ void hash_del(session_t *s)
 {
     int i = 0;
     for (i = 0; i < HASH_SIZE; ++i) {
-	session_t *p = hh_sessions[i];
+        session_t *p = hh_sessions[i];
         if ((p) && (p == s)) {
-	     hh_sessions[i] = NULL;
-	     return;
-	}
+            hh_sessions[i] = NULL;
+            return;
+        }
     }
 }
 
@@ -101,10 +101,10 @@ static int udp_listen(struct addrinfo *addr)
             continue;
         }
 
-        int on = 1;
-        if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) != 0) {
+        int off = 1;
+        if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &off, sizeof(off)) != 0) {
             close(s);
-            perror("setsockopt(SO_REUSEADDR) failed");
+            perror("setsockopt(SO_REUSEADDR) disable failed");
             return -1;
         }
 
@@ -159,7 +159,7 @@ void server_send_pending()
     int64_t next_timeout = INT64_MAX;
     for (size_t i = 0; i < num_conns; ++i) {
         if (!send_pending(&server_ctx, udp_server_socket, conns[i])) {
-	    i = remove_conn(i);
+        i = remove_conn(i);
         } else {
             next_timeout = min_int64(quicly_get_first_timeout(conns[i]), next_timeout);
         }
@@ -219,7 +219,7 @@ static void server_read_cb(EV_P_ ev_io *w, int revents)
 
     if (errno != EWOULDBLOCK && errno != 0) {
         perror("recvfrom failed");
-        fprintf(stderr, "udp sk %d recvfrom() returns with errno %d, %s.\n", w->fd, errno, strerror(errno));	
+        fprintf(stderr, "udp sk %d recvfrom() returns with errno %d, %s.\n", w->fd, errno, strerror(errno));
     }
 
     server_send_pending();
@@ -265,10 +265,10 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
         fprintf(stderr, "failed get addrinfo for addr %s port %s\n", address, port);
         return -1;
     }
-    
+
     int server_socket = udp_listen(addr);
     freeaddrinfo(addr);
-    
+
     if (server_socket == -1) {
         fprintf(stderr, "failed to listen on addr %s port %s\n", address, port);
         return -1;
@@ -287,7 +287,7 @@ int main(int argc, char** argv)
     const char *keyfile = "server.key";
     const char *certfile = "server.crt";
 
-    //TODO change this to HASH table 
+    //TODO change this to HASH table
     bzero((void *) hh_sessions, sizeof(hh_sessions));
 
     char port_char[16];
@@ -295,7 +295,7 @@ int main(int argc, char** argv)
 
     udp_server_socket = srv_setup_quic_listener(address, port_char, keyfile, certfile);
 
-    loop = EV_DEFAULT; 
+    loop = EV_DEFAULT;
 
     ev_io socket_watcher;
     ev_io_init(&socket_watcher, &server_read_cb, udp_server_socket, EV_READ);
