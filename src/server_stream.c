@@ -41,8 +41,8 @@ void server_cleanup_tcp_side(int fd)
         long int stream_id = s->stream_id;
         quicly_stream_t *stream = quicly_get_stream(s->conn, stream_id);
         if (stream) {
-            //quicly_streambuf_egress_shutdown(stream);
-            quicly_streambuf_destroy(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
+            quicly_streambuf_egress_shutdown(stream);
+            //quicly_streambuf_destroy(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
             //free(stream);
         }
     }
