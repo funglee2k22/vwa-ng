@@ -28,6 +28,8 @@ static int64_t start_time = 0;
 static int64_t connect_time = 0;
 static ptls_iovec_t resumption_token;
 
+
+
 struct ev_loop *loop = NULL;
 //session_t *hh_quic_to_tcp[1024] = {NULL};
 //session_t *hh_tcp_to_quic[1024] = {NULL};
@@ -43,7 +45,9 @@ static quicly_closed_by_remote_t closed_by_remote = {&client_on_conn_close};
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents);
 
-#define HASH_SIZE 1024
+//void enqueue_request(quicly_conn_t *conn);
+
+
 session_t *hash_find_by_tcp_fd(int fd);
 session_t *hash_find_by_stream_id(long int stream_id);
 void hash_insert(session_t *s);
@@ -128,10 +132,15 @@ void client_timeout_cb(EV_P_ ev_timer *w, int revents)
          printf("timeout_cb count %d\n", count);
     }
 
+    //quicly_stream_t *stream = quicly_get_stream(conn, 0);
+    //assert(stream);
+    //enqueue_request(conn);
+
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         my_debug();
-        quicly_free(conn);
-        exit(0);
+	fprintf(stderr, "quicly conn is close-able, but keep it open\n");
+        //quicly_free(conn);
+        //exit(0);
     }
     client_refresh_timeout();
 }
@@ -252,7 +261,7 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
 
     quicly_streambuf_egress_write(stream, buf, len);
     //quicly_streambuf_egress_shutdown(stream);
-    printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
+    //printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
 
     return 0;
 
@@ -263,7 +272,10 @@ void client_cleanup(int fd)
     session_t *s = hash_find_by_tcp_fd(fd);
 
     if (s) {
-        hash_del(s);
+        hash_del(s); 
+	quicly_stream_t *stream = quicly_get_stream(conn, s->stream_id);
+	assert(stream != NULL);
+	quicly_streambuf_egress_shutdown(stream);
     }
 
     free(s);
@@ -297,7 +309,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         printf("fd: %d remote peer closed.\n", fd);
         ev_io_stop(loop, w);
         client_cleanup(fd);
-        //free(w);
+        free(w);
     } else if (read_bytes < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
         //Nothing to read.
@@ -488,6 +500,15 @@ int clt_setup_quic_connection(const char *host, const char *port)
     return client_quic_socket;
 }
 
+void sigpipe_handler(int signo)
+{ 
+    if (signo == SIGPIPE) { 
+        fprintf(stderr, "SIGPIPE(%d) received. errno: %d, \"%s\"\n", signo, errno, strerror(errno));
+	return;
+    } 
+    return;
+}
+
 
 int main(int argc, char** argv)
 {
@@ -507,6 +528,14 @@ int main(int argc, char** argv)
 
     snprintf(port_char, sizeof(port_char), "%d", tcp_port);
     client_tcp_socket = clt_setup_tcp_listener(local_host, port_char);
+
+    //TODO: it is a quick fix, for some reason, SIGPIPE was not handled 
+    //correctly.
+    //signal(SIGPIPE, SIG_IGN); 
+    if (signal(SIGPIPE, sigpipe_handler) == SIG_ERR) { 
+        perror("can't catch SIGPIPE");  
+	exit(-1);
+    } 
 
     set_non_blocking(client_tcp_socket);
     set_non_blocking(client_quic_socket);

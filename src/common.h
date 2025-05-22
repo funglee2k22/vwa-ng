@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
+#define HASH_SIZE 10240
+
 #define my_debug()  printf("func: %s, line: %d: we are good here.\n",  __func__, __LINE__); fflush(stdout);
 
 void print_trace (void);
