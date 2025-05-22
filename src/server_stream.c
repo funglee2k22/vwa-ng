@@ -124,14 +124,16 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     if (l <= 0)
         return;
 
-    ssize_t send_bytes = send(s->fd, base, l, 0);
+    ssize_t send_bytes = -1; 
+    while ((send_bytes = send(s->fd, base, l, 0)) == -1 && (errno == EAGAIN)) 
+	    ; 
     if (send_bytes == -1) {
         perror("send (2) failed.");
         fprintf(stderr, "relay msg from quic to tcp failed with %d, %s.\n", errno, strerror(errno));
         return;
     }
 
-    printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes);
+    //printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes);
 
     return;
 
@@ -213,7 +215,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     }
 
     if (total_size > tcp_output_thresh) {
-        fprintf(stdout, "fd %d total read %ld bytes.\n", fd, total_size);
+        //fprintf(stdout, "fd %d total read %ld bytes.\n", fd, total_size);
         tcp_output_thresh += 10 * 1024 * 1024;
     }
 
