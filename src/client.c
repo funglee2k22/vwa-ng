@@ -374,7 +374,8 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
 
     frame_t ctrl_frame;
     ctrl_frame.type = 1;
-    memcpy(&(ctrl_frame.s), session, sizeof(session_t));
+    memcpy(&(ctrl_frame.s.src), &sa,  sizeof(sa));
+    memcpy(&(ctrl_frame.s.dst), &da,  sizeof(da));
 
     //send clt side session info to server;
     quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));

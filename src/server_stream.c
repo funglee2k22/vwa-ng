@@ -8,8 +8,9 @@
 #include <stdbool.h>
 #include <quicly/streambuf.h>
 
-//extern session_t *hh_tcp_to_quic;
-//extern session_t *hh_quic_to_tcp;
+extern session_t *ht_tcp_to_quic;
+extern session_t *ht_quic_to_tcp;
+
 extern struct ev_loop *loop;
 
 int create_tcp_connection(struct sockaddr *sa);
@@ -29,10 +30,10 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 // clean up
 void server_cleanup_tcp_side(int fd)
 {
-    session_t *s = hash_find_by_tcp_fd(fd);
+    session_t *s = find_session_t2q(&ht_tcp_to_quic, fd);
 
     if (s)
-        hash_del(s);
+       	delete_session(&ht_tcp_to_quic, &ht_quic_to_tcp, s); 
 
     if (fd)
         close(fd);
@@ -48,7 +49,8 @@ void server_cleanup_tcp_side(int fd)
     }
 
     if (s)
-        free(s);
+        free(s); 
+
     return;
 }
 
@@ -56,36 +58,42 @@ void server_cleanup_tcp_side(int fd)
 session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
 {
     long int stream_id = stream->stream_id;
-    session_t *p = (session_t *) malloc(sizeof(session_t));
-    bzero(p, sizeof(*p));
-    memcpy(p, &(ctrl_frame->s), sizeof(session_t));
+    session_t *ns = (session_t *) malloc(sizeof(session_t));
 
-    struct sockaddr_in *da = (struct sockaddr_in *) &(p->da);
-    struct sockaddr_in *sa = (struct sockaddr_in *) &(p->sa);
-    p->stream_id = stream_id;
-    p->conn = stream->conn;
+    bzero(ns, sizeof(session_t));
+    memcpy(&(ns->da), &(ctrl_frame->s.dst), sizeof(struct sockaddr_in));
+    memcpy(&(ns->sa), &(ctrl_frame->s.src), sizeof(struct sockaddr_in));
+
+    struct sockaddr_in *da = (struct sockaddr_in *) &(ns->da);
+    struct sockaddr_in *sa = (struct sockaddr_in *) &(ns->sa);
+    ns->stream_id = stream_id;
+    ns->conn = stream->conn;
 
     int fd = create_tcp_connection((struct sockaddr *) da);
     if (fd < 0) {
         fprintf(stderr, "failed to create tcp for stream: %ld. \n", stream->stream_id);
-    free(p);
+        free(ns);
         return NULL;
     }
 
     assert(fd > 0);
     set_non_blocking(fd);
-    p->fd = fd;
-    fprintf(stdout, "session quic: %ld <-> tcp: %d created.\n", stream->stream_id, fd);
+    ns->fd = fd;
+    fprintf(stdout, "session quic: %ld <-> tcp: %d  (%s:%d -> %s:%d created.\n", 
+		    stream->stream_id, fd, 
+		    inet_ntoa(sa->sin_addr), ntohs(sa->sin_port), 
+		    inet_ntoa(da->sin_addr), ntohs(da->sin_port));
 
     //add session into hashtables
-    hash_insert(p);
+    add_to_hash_t2q(&ht_tcp_to_quic, ns);
+    add_to_hash_q2t(&ht_quic_to_tcp, ns);
 
     //add socket read watcher
     ev_io *socket_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(socket_watcher, server_tcp_read_cb, fd, EV_READ);
     ev_io_start(loop, socket_watcher);
 
-    return p;
+    return ns;
 };
 
 
@@ -106,7 +114,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     char *base = input.base;
     long int stream_id = stream->stream_id;
 
-    session_t *s = hash_find_by_stream_id(stream_id);
+    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream_id);
 
     if (!s) {
         frame_t *ctrl_frame = (frame_t *) base;
@@ -115,7 +123,10 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             return;
         }
         s = handle_ctrl_frame(stream, ctrl_frame);
-        assert(s != NULL);
+        if (!s) {
+	    fprintf(stderr, "stream: %ld could not create session.\n", stream_id);
+	    return;
+	}
         s->ctrl_frame_received = true;
         base += sizeof(frame_t);
         l -= sizeof(frame_t);
@@ -175,7 +186,7 @@ int create_tcp_connection(struct sockaddr *sa)
 
 int srv_tcp_to_quic(int fd, char *buf, int len)
 {
-    session_t *s = hash_find_by_tcp_fd(fd);
+    session_t *s = find_session_t2q(&ht_quic_to_tcp, fd);
 
     if (!s) {
         printf("could not find quic stream peer for tcp %d.\n", fd);

@@ -24,73 +24,8 @@ static ev_timer server_timeout;
 static quicly_cid_plaintext_t next_cid;
 struct ev_loop *loop = NULL;
 
-//session_t *hh_tcp_to_quic = NULL;
-//session_t *hh_quic_to_tcp = NULL;
-session_t *hh_sessions[HASH_SIZE] = {0};
-
-
-session_t *hash_find_by_tcp_fd(int fd)
-{
-    session_t *r = NULL;
-    int i = 0;
-
-    for (i = 0; i < HASH_SIZE; ++i) {
-        session_t *p = hh_sessions[i];
-        if ((p) && (p->fd == fd)) {
-            r = p;
-            break;
-        }
-    }
-
-    return r;
-}
-
-session_t *hash_find_by_stream_id(long int stream_id)
-{
-    session_t *r = NULL;
-    int i = 0;
-    for (i = 0; i < HASH_SIZE; ++i) {
-        session_t *p = hh_sessions[i];
-        if (p && (p->stream_id == stream_id)) {
-            r = p;
-            break;
-        }
-    }
-    return r;
-}
-
-void hash_insert(session_t *s)
-{
-    session_t *r = hash_find_by_tcp_fd(s->fd);
-
-    if (r) {
-        //do update
-        r->stream_id = s->stream_id;
-        return;
-    }
-
-    int i = 0;
-    for (i = 0; i < HASH_SIZE; ++i) {
-        session_t *p = hh_sessions[i];
-        if (!p) {
-            hh_sessions[i] = s;
-            return;
-        }
-    }
-    return;
-}
-
-void hash_del(session_t *s)
-{
-    int i = 0;
-    for (i = 0; i < HASH_SIZE; ++i) {
-        session_t *p = hh_sessions[i];
-        if ((p) && (p == s)) {
-            hh_sessions[i] = NULL;
-            return;
-        }
-    }
-}
+session_t *ht_tcp_to_quic = NULL;
+session_t *ht_quic_to_tcp = NULL;
 
 
 static int udp_listen(struct addrinfo *addr)
@@ -286,9 +221,6 @@ int main(int argc, char** argv)
     const char *logfile = NULL;
     const char *keyfile = "server.key";
     const char *certfile = "server.crt";
-
-    //TODO change this to HASH table
-    bzero((void *) hh_sessions, sizeof(hh_sessions));
 
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);

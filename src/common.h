@@ -18,10 +18,14 @@
 
 void print_trace (void);
 
-
 typedef struct cpep_frame { 
     int type; 
-    session_t s; 
+    union { 
+       struct { 
+           struct sockaddr_in src;
+           struct sockaddr_in dst;     //original 
+       } s; 
+    }; 
 } frame_t; 
 
 ptls_context_t *get_tlsctx();
