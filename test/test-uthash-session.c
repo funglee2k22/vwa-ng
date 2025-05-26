@@ -8,7 +8,6 @@
 session_t *q2t = NULL;
 session_t *t2q = NULL;
 
-
 void add_to_hash_t2q(session_t **hh, session_t *s) 
 { 
      session_t *t = NULL; 
@@ -59,8 +58,15 @@ session_t *find_session_q2t(session_t **hh, long int stream_id)
 
 void delete_session(session_t **t2q, session_t **q2t, session_t *s) 
 {
-    HASH_DELETE(hh_t2q, *t2q, s); 
-    HASH_DELETE(hh_q2t, *q2t, s); 
+    if (!s) 
+	return;
+
+    if (t2q) 
+        HASH_DELETE(hh_t2q, *t2q, s);
+ 
+    if (q2t)  
+        HASH_DELETE(hh_q2t, *q2t, s); 
+
     return;
 }
 
@@ -76,6 +82,54 @@ int main()
 	add_to_hash_t2q(&t2q, ns);
 	add_to_hash_q2t(&q2t, ns);
     }
+
+    printf("t2q elements: %d\n", HASH_CNT(hh_t2q, t2q));
+    printf("q2t elements: %d\n", HASH_CNT(hh_q2t, q2t));
+
+
+    session_t *expect = NULL, *actual = NULL; 
+    actual = find_session_t2q(&t2q, 1);
+    assert(actual->fd == 1);
+
+    printf("line: %d passed.\n", __LINE__);
+
+    actual = find_session_t2q(&t2q, 3000);
+    assert(actual == NULL);
+
+    printf("line: %d passed.\n", __LINE__);
+
+    actual = find_session_q2t(&q2t, 11);
+    assert(actual->stream_id == 11);
+
+    printf("line: %d passed.\n", __LINE__);
+
+    actual = find_session_q2t(&q2t, 3000);
+    assert(actual == NULL);
+   
+    printf("line: %d passed.\n", __LINE__);    
+
+    actual = find_session_t2q(&t2q, 3);
+    delete_session(&t2q, NULL, actual); 
+    expect = actual;
+    actual = find_session_t2q(&t2q, 3);
+    assert(actual == NULL); 
+    printf("line: %d passed.\n", __LINE__);    
+
+    actual = find_session_q2t(&q2t, expect->stream_id); 
+    assert(actual == expect);
+    printf("line: %d passed.\n", __LINE__);    
+
+    delete_session(NULL, &q2t, expect);
+    actual = find_session_q2t(&q2t, expect->stream_id);
+    assert(actual == NULL);
+    printf("line: %d passed.\n", __LINE__);    
+    
+    actual = find_session_t2q(&t2q, expect->fd);
+    assert(actual == NULL);
+
+    printf("line: %d passed.\n", __LINE__);    
+    free(expect);
+
 
     return 0;
 

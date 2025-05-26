@@ -1,6 +1,7 @@
 #pragma once
 
 #include "uthash.h"
+#include "session.h" 
 
 #include <execinfo.h>
 #include <stdio.h>
@@ -17,19 +18,6 @@
 
 void print_trace (void);
 
-typedef struct cpep_session { 
-    long int stream_id;      // on both client and server, stream_id is the key 
-    int fd; 
-    struct sockaddr_in sa;   // TCP socket src addr 
-    struct sockaddr_in da;   // TCP socket original dst addr 
-    quicly_conn_t *conn;     // quicly_conn_t *conn used by quicly stream
-    union { 
-        bool ctrl_frame_received;
-        bool ctrl_frame_sent;
-    };	
-    //should be ev_timer     // TODO  it should be a timer handle. 
-    UT_hash_handle hh; 
-} session_t; 
 
 typedef struct cpep_frame { 
     int type; 
