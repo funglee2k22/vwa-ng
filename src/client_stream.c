@@ -12,8 +12,8 @@ static uint64_t bytes_received = 0;
 static ev_timer report_timer;
 static int runtime_s = 3600;
 
-//extern session_t *hh_tcp_to_quic;
-//extern session_t *hh_quic_to_tcp;
+extern session_t *ht_tcp_to_quic;
+extern session_t *ht_quic_to_tcp;
 
 
 void format_size(char *dst, double bytes)
@@ -57,7 +57,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
          return;
 
     long int stream_id = stream->stream_id;
-    session_t *session = hash_find_by_stream_id(stream_id);
+    session_t *session = find_session_q2t(&ht_quic_to_tcp, stream_id);
 
     if (!session) {
      //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
