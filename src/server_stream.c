@@ -33,7 +33,7 @@ void server_cleanup_tcp_side(int fd)
     session_t *s = find_session_t2q(&ht_tcp_to_quic, fd);
 
     if (s)
-       	delete_session(&ht_tcp_to_quic, &ht_quic_to_tcp, s); 
+           delete_session(&ht_tcp_to_quic, &ht_quic_to_tcp, s);
 
     if (fd)
         close(fd);
@@ -49,7 +49,7 @@ void server_cleanup_tcp_side(int fd)
     }
 
     if (s)
-        free(s); 
+        free(s);
 
     return;
 }
@@ -79,10 +79,10 @@ session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
     assert(fd > 0);
     set_non_blocking(fd);
     ns->fd = fd;
-    fprintf(stdout, "session quic: %ld <-> tcp: %d  (%s:%d -> %s:%d created.\n", 
-		    stream->stream_id, fd, 
-		    inet_ntoa(sa->sin_addr), ntohs(sa->sin_port), 
-		    inet_ntoa(da->sin_addr), ntohs(da->sin_port));
+    fprintf(stdout, "session quic: %ld <-> tcp: %d  (%s:%d -> %s:%d created.\n",
+            stream->stream_id, fd,
+            inet_ntoa(sa->sin_addr), ntohs(sa->sin_port),
+            inet_ntoa(da->sin_addr), ntohs(da->sin_port));
 
     //add session into hashtables
     add_to_hash_t2q(&ht_tcp_to_quic, ns);
@@ -124,9 +124,9 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         }
         s = handle_ctrl_frame(stream, ctrl_frame);
         if (!s) {
-	    fprintf(stderr, "stream: %ld could not create session.\n", stream_id);
-	    return;
-	}
+            fprintf(stderr, "stream: %ld could not create session.\n", stream_id);
+            return;
+        }
         s->ctrl_frame_received = true;
         base += sizeof(frame_t);
         l -= sizeof(frame_t);
@@ -135,9 +135,9 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     if (l <= 0)
         return;
 
-    ssize_t send_bytes = -1; 
-    while ((send_bytes = send(s->fd, base, l, 0)) == -1 && (errno == EAGAIN)) 
-	    ; 
+    ssize_t send_bytes = -1;
+    while ((send_bytes = send(s->fd, base, l, 0)) == -1 && (errno == EAGAIN))
+        ;
     if (send_bytes == -1) {
         perror("send (2) failed.");
         fprintf(stderr, "relay msg from quic to tcp failed with %d, %s.\n", errno, strerror(errno));

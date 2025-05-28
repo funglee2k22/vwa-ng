@@ -51,10 +51,10 @@ static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
     if (len == 0)
-    return;
+        return;
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
-         return;
+        return;
 
     long int stream_id = stream->stream_id;
     session_t *session = find_session_q2t(&ht_quic_to_tcp, stream_id);

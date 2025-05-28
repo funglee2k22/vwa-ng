@@ -30,9 +30,9 @@ session_t *ht_quic_to_tcp = NULL;
 
 static int udp_listen(struct addrinfo *addr)
 {
-    for(const struct addrinfo *rp = addr; rp != NULL; rp = rp->ai_next) {
+    for (const struct addrinfo *rp = addr; rp != NULL; rp = rp->ai_next) {
         int s = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if(s == -1) {
+        if (s == -1) {
             continue;
         }
 
@@ -94,7 +94,7 @@ void server_send_pending()
     int64_t next_timeout = INT64_MAX;
     for (size_t i = 0; i < num_conns; ++i) {
         if (!send_pending(&server_ctx, udp_server_socket, conns[i])) {
-        i = remove_conn(i);
+            i = remove_conn(i);
         } else {
             next_timeout = min_int64(quicly_get_first_timeout(conns[i]), next_timeout);
         }
