@@ -28,8 +28,10 @@ target_compile_options(new-srv PRIVATE
     -Werror=shift-count-overflow
 )
 
-
-add_executable(test-uthash src/uthash.h test/session.h test/test-uthash-session.c ) 
+#----------------
+#tests and small poc 
+#---------------
+add_executable(test-uthash src/uthash.h test/uthash-test/session.h test/uthash-test/test-uthash-session.c ) 
 target_link_libraries(test-uthash PRIVATE quicly ev picotls)
 target_compile_definitions(test-uthash PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(test-uthash PRIVATE
@@ -37,3 +39,5 @@ target_compile_options(test-uthash PRIVATE
     -Werror=incompatible-pointer-types
     -Werror=shift-count-overflow
 )
+
+add_executable(test-udp-tproxy test/udp-tproxy-test/udp-tproxy-server.c ) 
