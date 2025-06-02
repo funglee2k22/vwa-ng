@@ -55,7 +55,7 @@ void server_cleanup_tcp_side(int fd)
 }
 
 
-session_t *handle_ctrl_frame(quicly_stream_t *stream, frame_t *ctrl_frame)
+session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
 {
     long int stream_id = stream->stream_id;
     session_t *ns = (session_t *) malloc(sizeof(session_t));
@@ -122,7 +122,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             //fprintf(stderr, "stream: %ld received %ld bytes unexpected data.\n", stream_id, len);
             return;
         }
-        s = handle_ctrl_frame(stream, ctrl_frame);
+        s = create_session(stream, ctrl_frame);
         if (!s) {
             fprintf(stderr, "stream: %ld could not create session.\n", stream_id);
             return;
@@ -138,6 +138,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     ssize_t send_bytes = -1;
     while ((send_bytes = send(s->fd, base, l, 0)) == -1 && (errno == EAGAIN))
         ;
+
     if (send_bytes == -1) {
         perror("send (2) failed.");
         fprintf(stderr, "relay msg from quic to tcp failed with %d, %s.\n", errno, strerror(errno));
@@ -145,20 +146,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     }
 
     //printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes);
-
     return;
-
-#if 0
-    if(quicly_recvstate_transfer_complete(&stream->recvstate)) {
-        printf("request received, sending data\n");
-        quicly_stream_sync_sendbuf(stream, 1);
-    }
-
-    if (quicly_recvstate_transfer_complete(&stream->recvstate)) {
-        fprintf(stderr, "stream: %ld recv completed, sending data\n", stream->stream_id);
-        quicly_stream_sync_sendbuf(stream, 1);
-    }
-#endif
 
 }
 

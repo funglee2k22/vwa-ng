@@ -133,7 +133,19 @@ static inline void server_handle_packet(quicly_decoded_packet_t *packet, struct 
     }
 }
 
-static void server_read_cb(EV_P_ ev_io *w, int revents)
+void server_udp_write_cb(EV_P_ ev_io *w, int revents)
+{
+    int fd = w->fd;
+    for (size_t i = 0; i < num_conns; ++i) {
+        if (!send_pending(&server_ctx, fd, conns[i])) {
+            //TODO for debug purpose, we close the long idle quicly conn
+            i = remove_conn(i);
+        }
+    }
+    return;
+}
+
+static void server_udp_read_cb(EV_P_ ev_io *w, int revents)
 {
     // retrieve data
     uint8_t buf[4096];
@@ -156,8 +168,6 @@ static void server_read_cb(EV_P_ ev_io *w, int revents)
         perror("recvfrom failed");
         fprintf(stderr, "udp sk %d recvfrom() returns with errno %d, %s.\n", w->fd, errno, strerror(errno));
     }
-
-    server_send_pending();
 }
 
 static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
@@ -229,11 +239,15 @@ int main(int argc, char** argv)
 
     loop = EV_DEFAULT;
 
-    ev_io socket_watcher;
-    ev_io_init(&socket_watcher, &server_read_cb, udp_server_socket, EV_READ);
-    ev_io_start(loop, &socket_watcher);
+    ev_io udp_read_watcher;
+    ev_io_init(&udp_read_watcher, &server_udp_read_cb, udp_server_socket, EV_READ);
+    ev_io_start(loop, &udp_read_watcher);
 
-    ev_init(&server_timeout, &server_timeout_cb);
+    ev_io udp_write_watcher;
+    ev_io_init(&udp_write_watcher, &server_udp_write_cb, udp_server_socket, EV_WRITE);
+    ev_io_start(loop, &udp_write_watcher);
+
+    //ev_init(&server_timeout, &server_timeout_cb);
 
     ev_run(loop, 0);
 
