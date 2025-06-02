@@ -60,32 +60,25 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     session_t *session = find_session_q2t(&ht_quic_to_tcp, stream_id);
 
     if (!session) {
-     //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
-     return;
+        //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
+        return;
     }
+
     assert(session != NULL);
 
-    int tcp_fd = session->fd;
-
-    ssize_t bytes_sent = -1;
-    while ((bytes_sent = write(tcp_fd, src, len) == -1) && (errno == EAGAIN)) {  // || errno == EWOULDBLOCK))
-        ;
+    //copy stream content into the APP write buffer.
+    char *base =session->q2t_buf + session->q2t_read_offset;
+    size_t actual_read_len = session->buf_len - session->q2t_read_offset;
+    if (len > actual_read_len) {
+        memcpy(base, src, actual_read_len);
+        session->q2t_read_offset += actual_read_len;
+    } else {
+        memcpy(base, src, len);
+        session->q2t_read_offset += len;
+        actual_read_len = len;
     }
 
-    if (bytes_sent == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno));
-        } else {
-            fprintf(stderr, "tcp %d write error %d, %s\n", tcp_fd, errno, strerror(errno));
-            //TODO should we close stream also ?
-            //client_cleanup(tcp_fd);
-            //quicly_streambuf_destroy(stream, QUICLY_ERROR_STREAM_STATE);
-            return;
-        }
-    }
-
-cleanup:
-    quicly_stream_sync_recvbuf(stream, len);
+    quicly_stream_sync_recvbuf(stream, actual_read_len);
 
     return;
 }

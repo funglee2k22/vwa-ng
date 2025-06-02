@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
+#define APP_BUF_SIZE (1 * 1024 * 1024)
+
 typedef struct session {
     long int stream_id;      // on both client and server, stream_id is the key
     int fd;
@@ -21,13 +23,13 @@ typedef struct session {
         bool ctrl_frame_received;
         bool ctrl_frame_sent;
     };
-    void *tcp_to_quic_buf;
-    void *quic_to_tcp_buf;
+    void *t2q_buf;
+    void *q2t_buf;
     size_t buf_len;
     size_t t2q_read_offset;
-    size_t t2q_white_offset;
+    size_t t2q_write_offset;
     size_t q2t_read_offset;
-    size_t q2t_white_offset;
+    size_t q2t_write_offset;
     UT_hash_handle hh_t2q;    //uthash requires different handle for each hashmap
     UT_hash_handle hh_q2t;    //
 } session_t;
