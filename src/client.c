@@ -28,8 +28,6 @@ static int64_t start_time = 0;
 static int64_t connect_time = 0;
 static ptls_iovec_t resumption_token;
 
-
-
 struct ev_loop *loop = NULL;
 session_t *ht_quic_to_tcp = NULL;
 session_t *ht_tcp_to_quic = NULL;
@@ -72,6 +70,20 @@ void client_timeout_cb(EV_P_ ev_timer *w, int revents)
     client_refresh_timeout();
 }
 
+void client_quic_write_cb(EV_P_ ev_io *w, int revents)
+{
+    int fd = w->fd;
+
+    if(!send_pending(&client_ctx, fd, conn)) {
+        my_debug();
+        fprintf(stderr, "quicly conn is close-able, but keep it open\n");
+        //TODO we may need to keep UDP socket always open.
+        //quicly_free(conn);
+        //exit(0);
+    }
+
+    return;
+}
 void client_quic_read_cb(EV_P_ ev_io *w, int revents)
 {
     // retrieve data
@@ -116,13 +128,8 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
         perror("recvfrom failed");
     }
 
-    if(!send_pending(&client_ctx, client_quic_socket, conn)) {
-        my_debug();
-        quicly_free(conn);
-        exit(0);
-    }
+    return;
 
-    client_refresh_timeout();
 }
 
 void enqueue_request(quicly_conn_t *conn)
@@ -236,7 +243,10 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         ev_io_stop(loop, w);
         client_cleanup(fd);
         free(w);
-    } else if (read_bytes < 0) {
+        return;
+    }
+
+    if(read_bytes < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
         //Nothing to read.
         //printf("fd: %d noththing to read.\n");
@@ -466,10 +476,14 @@ int main(int argc, char** argv)
     set_non_blocking(client_tcp_socket);
     set_non_blocking(client_quic_socket);
 
-    ev_io quic_socket_watcher, tcp_socket_accept_watcher;
-    ev_io_init(&quic_socket_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
-    ev_io_start(loop, &quic_socket_watcher);
+    ev_io udp_read_watcher, udp_write_watcher;
+    ev_io_init(&udp_read_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
+    ev_io_start(loop, &udp_read_watcher);
 
+    ev_io_init(&udp_write_watcher, &client_quic_write_cb, client_quic_socket, EV_WRITE);
+    ev_io_start(loop, &udp_write_watcher);
+
+    ev_io tcp_socket_accept_watcher;
     ev_io_init(&tcp_socket_accept_watcher, &client_tcp_accept_cb, client_tcp_socket, EV_READ);
     ev_io_start(loop, &tcp_socket_accept_watcher);
 
