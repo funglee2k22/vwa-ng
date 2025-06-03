@@ -97,7 +97,7 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     ns->q2t_buf = malloc(APP_BUF_SIZE);
     assert(ns->t2q_buf != NULL);
     assert(ns->q2t_buf != NULL);
-
+    ns->buf_len = APP_BUF_SIZE;
     ns->t2q_read_offset = ns->t2q_write_offset = 0;
     ns->q2t_read_offset = ns->q2t_write_offset = 0;
 
@@ -172,20 +172,6 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     quicly_stream_sync_recvbuf(stream, actual_read_len);
     return;
 
-#if 0
-    ssize_t send_bytes = -1;
-    while ((send_bytes = send(s->fd, base, l, 0)) == -1 && (errno == EAGAIN))
-        ;
-
-    if (send_bytes == -1) {
-        perror("send (2) failed.");
-        fprintf(stderr, "relay msg from quic to tcp failed with %d, %s.\n", errno, strerror(errno));
-        return;
-    }
-
-    //printf("stream_id: %ld -> tcp: %d, sent %ld bytes.\n", stream_id, s->fd, send_bytes);
-    return;
-#endif
 }
 
 int create_tcp_connection(struct sockaddr *sa)
@@ -238,6 +224,7 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
 {
    int fd = w->fd;
     session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
+
     if (!session) {
         printf("could not find quic connection for tcp fd: %d.\n", fd);
         server_cleanup_tcp_side(fd);
@@ -311,7 +298,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 {
     int fd = w->fd;
     session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
-    
+
     if (!session) {
         fprintf(stderr, "could not find session for tcp %d. \n", fd);
         ev_io_stop(loop, w);
