@@ -227,7 +227,7 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
 int main(int argc, char** argv)
 {
     int port = 4433;
-    const char *address = "192.168.30.1";
+    const char *address = "192.168.10.1";
     const char *logfile = NULL;
     const char *keyfile = "server.key";
     const char *certfile = "server.crt";
