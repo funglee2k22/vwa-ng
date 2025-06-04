@@ -6,6 +6,7 @@
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <syslog.h> 
 #include <quicly.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -13,10 +14,6 @@
 #include <sys/syscall.h>
 
 #define HASH_SIZE 10240
-
-#define my_debug()  printf("func: %s, line: %d: we are good here.\n",  __func__, __LINE__); fflush(stdout);
-
-void print_trace (void);
 
 typedef struct cpep_frame { 
     int type; 
@@ -34,6 +31,16 @@ struct addrinfo *get_address(const char *host, const char *port);
 bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn);
 
 int set_non_blocking(int sockfd);
+
+void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
+    __attribute__((format(printf, 4, 5)));
+
+void print_trace (void);
+
+#define log_debug(...)  _debug_printf(LOG_DEBUG, __func__, __LINE__, __VA_ARGS__)
+#define log_info(...)   _debug_printf(LOG_INFO, __func__, __LINE__, __VA_ARGS__)
+#define log_warn(...)   _debug_printf(LOG_WARNING,__func__, __LINE__, __VA_ARGS__)
+#define log_error(...)  _debug_printf(LOG_ERR, __func__, __LINE__, __VA_ARGS__)
 
 static inline int64_t min_int64(int64_t a, int64_t b)
 {

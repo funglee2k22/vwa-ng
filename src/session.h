@@ -1,21 +1,23 @@
 #pragma once
 
-#include "uthash.h"
-
+#include <ev.h>
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/syscall.h>
 #include <quicly.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <sys/syscall.h>
+#include "uthash.h"
 
 #define APP_BUF_SIZE (1 * 1024 * 1024)
 
 typedef struct session {
     long int stream_id;      // on both client and server, stream_id is the key
     int fd;
+    quicly_stream_t *stream;
+    bool stream_inactive; 
     struct sockaddr_in sa;   // TCP socket src addr
     struct sockaddr_in da;   // TCP socket original dst addr
     quicly_conn_t *conn;     // quicly_conn_t *conn used by quicly stream
@@ -23,6 +25,8 @@ typedef struct session {
         bool ctrl_frame_received;
         bool ctrl_frame_sent;
     };
+    ev_io *tcp_read_watcher;
+    ev_io *tcp_write_wathcer;
     void *t2q_buf;
     void *q2t_buf;
     size_t buf_len;

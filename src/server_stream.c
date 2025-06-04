@@ -63,12 +63,10 @@ void server_cleanup_tcp_side(int fd)
     return;
 }
 
-
 session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
 {
     long int stream_id = stream->stream_id;
     session_t *ns = (session_t *) malloc(sizeof(session_t));
-
     bzero(ns, sizeof(session_t));
     memcpy(&(ns->da), &(ctrl_frame->s.dst), sizeof(struct sockaddr_in));
     memcpy(&(ns->sa), &(ctrl_frame->s.src), sizeof(struct sockaddr_in));
@@ -114,6 +112,8 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     ev_io *socket_write_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(socket_write_watcher, server_tcp_write_cb, fd, EV_WRITE);
     ev_io_start(loop, socket_write_watcher);
+
+
 
     return ns;
 };

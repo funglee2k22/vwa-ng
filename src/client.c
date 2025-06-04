@@ -20,7 +20,6 @@
 static int client_quic_socket = -1;
 static int client_tcp_socket = -1;
 static quicly_conn_t *conn = NULL;
-static quicly_stream_t *ctrl_stream = NULL;
 static ev_timer client_timeout;
 static quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
@@ -42,7 +41,7 @@ static quicly_closed_by_remote_t closed_by_remote = {&client_on_conn_close};
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents);
 
-//void enqueue_request(quicly_conn_t *conn);
+void send_heartbeat(quicly_conn_t *conn);
 
 void client_refresh_timeout()
 {
@@ -54,19 +53,12 @@ void client_refresh_timeout()
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents)
 {
-    static int count;
-
-    count++;
-    if ((count % 10) == 0) {
-         printf("timeout_cb count %d\n", count);
-    }
 
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
-        my_debug();
-        fprintf(stderr, "quicly conn is close-able, but keep it open\n");
-        //quicly_free(conn);
-        //exit(0);
+        log_warn("quicly conn is close-able, but keep it open\n");
+        send_heartbeat(conn);
     }
+
     client_refresh_timeout();
 }
 
@@ -75,11 +67,7 @@ void client_quic_write_cb(EV_P_ ev_io *w, int revents)
     int fd = w->fd;
 
     if(!send_pending(&client_ctx, fd, conn)) {
-        my_debug();
-        fprintf(stderr, "quicly conn is close-able, but keep it open\n");
-        //TODO we may need to keep UDP socket always open.
-        //quicly_free(conn);
-        //exit(0);
+        log_warn("quicly conn is close-able, but keep it open\n");
     }
 
     return;
@@ -92,15 +80,8 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
     socklen_t salen = sizeof(sa);
     quicly_decoded_packet_t packet;
     ssize_t bytes_received;
-    static ssize_t quic_total_received, quic_output_thresh;
 
     while ((bytes_received = recvfrom(w->fd, buf, sizeof(buf), MSG_DONTWAIT,(struct sockaddr *) &sa, &salen)) != -1) {
-
-        quic_total_received += bytes_received;
-        if (quic_total_received >= quic_output_thresh) {
-            printf("quic-udp total received %ld bytes.\n", quic_total_received);
-            quic_output_thresh += 1024 * 1024 * 10;
-        }
 
         for (size_t offset = 0; offset < bytes_received; ) {
             size_t packet_len = quicly_decode_packet(&client_ctx, &packet, buf, bytes_received, &offset);
@@ -111,7 +92,7 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
             // handle packet --------------------------------------------------
             int ret = quicly_receive(conn, NULL, (struct sockaddr *) &sa, &packet);
             if (ret != 0 && ret != QUICLY_ERROR_PACKET_IGNORED) {
-                fprintf(stderr, "quicly_receive returned %i\n", ret);
+                log_error("quicly_receive returned %i\n", ret);
                 exit(1);
             }
 
@@ -119,7 +100,7 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
             if (connect_time == 0 && quicly_connection_is_ready(conn)) {
                 connect_time = client_ctx.now->cb(client_ctx.now);
                 int64_t establish_time = connect_time - start_time;
-                fprintf(stdout, "connection establishment time: %lums\n", establish_time);
+                log_info("connection establishment time: %lums\n", establish_time);
             }
         }
     }
@@ -132,17 +113,19 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
 
 }
 
-void enqueue_request(quicly_conn_t *conn)
+void send_heartbeat(quicly_conn_t *conn)
 {
     quicly_stream_t *stream;
     int ret = quicly_open_stream(conn, &stream, 0);
     assert(ret == 0);
-    const char *req = "quic-pep client start a connection";
+    const char *msg = "quic-pep client is alive";
+    ret = quicly_streambuf_egress_write(stream, msg, strlen(msg));
+   
+    if (ret != 0) {
+        log_warn("quic stream %ld failed to send heart beat message w/ error  %d.\n", stream->stream_id , ret);
+    }
 
-    ctrl_stream = stream;
-
-    quicly_streambuf_egress_write(stream, req, strlen(req));
-    //quicly_streambuf_egress_shutdown(stream);
+    return;
 }
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
@@ -385,12 +368,8 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     struct sockaddr_in da;
     socklen_t dalen = sizeof(da);
 
-#ifndef SO_ORIGINAL_DST
-#define SO_ORIGINAL_DST 80
-#endif
-
-    if (getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &da, &dalen) != 0) {
-        perror("getsockopt(SO_ORIGINAL_DST) failed");
+    if (getsockname(fd, (struct sockaddr *)&da, &dalen) != 0) {
+        perror("getsockname(2) failed.");
         return;
     }
 
@@ -525,7 +504,7 @@ int clt_setup_quic_connection(const char *host, const char *port)
     assert(ret == 0);
     ++next_cid.master_id;
 
-    enqueue_request(conn);
+    send_heartbeat(conn);
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         printf("failed to connect: send_pending failed\n");
         exit(-1);
