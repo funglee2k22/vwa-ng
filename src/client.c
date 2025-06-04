@@ -553,7 +553,7 @@ int main(int argc, char** argv)
 {
     int port = 4433;
     int tcp_port = 8443;
-    const char *host = "192.168.30.1";
+    const char *host = "192.168.10.1";
     const char *logfile = NULL;
     const char *local_host = "127.0.0.1";
 
