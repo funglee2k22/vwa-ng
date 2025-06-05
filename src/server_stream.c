@@ -25,8 +25,6 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
     quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 }
 
-
-
 // tcp-side error happens, or closed.
 // clean up
 void server_cleanup_tcp_side(int fd)
@@ -113,14 +111,13 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     ev_io_init(socket_write_watcher, server_tcp_write_cb, fd, EV_WRITE);
     ev_io_start(loop, socket_write_watcher);
 
-
-
     return ns;
 };
 
-
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
+    //log_debug("stream: %ld, received %ld bytes.\n", stream->stream_id, len);
+
     if (len == 0)
         return;
 
@@ -346,7 +343,8 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
 static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    if (len == 0) return;
+    if (len == 0)
+         return;
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
@@ -358,7 +356,9 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
     /* remove used bytes from receive buffer */
     quicly_streambuf_ingress_shift(stream, input.len);
 
-    //printf("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
+    log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
+    const char *msg = "Server received and reply PONG!\n";
+    quicly_streambuf_egress_write(stream, msg, strlen(msg));
 
     return;
 }

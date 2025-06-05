@@ -247,7 +247,7 @@ int main(int argc, char** argv)
     ev_io_init(&udp_write_watcher, &server_udp_write_cb, udp_server_socket, EV_WRITE);
     ev_io_start(loop, &udp_write_watcher);
 
-    //ev_init(&server_timeout, &server_timeout_cb);
+    ev_init(&server_timeout, &server_timeout_cb);
 
     ev_run(loop, 0);
 
