@@ -47,16 +47,15 @@ void client_refresh_timeout()
 {
     int64_t timeout = clamp_int64(quicly_get_first_timeout(conn) - client_ctx.now->cb(client_ctx.now),
                                   1, 200);
-    client_timeout.repeat = timeout / 1000.;
+    client_timeout.repeat = 5;
     ev_timer_again(EV_DEFAULT, &client_timeout);
 }
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents)
 {
-
+    send_heartbeat(conn);
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
         log_warn("quicly conn is close-able, but keep it open\n");
-        send_heartbeat(conn);
     }
 
     client_refresh_timeout();
@@ -115,12 +114,16 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
 
 void send_heartbeat(quicly_conn_t *conn)
 {
-    quicly_stream_t *stream;
-    int ret = quicly_open_stream(conn, &stream, 0);
-    assert(ret == 0);
-    const char *msg = "quic-pep client is alive";
-    ret = quicly_streambuf_egress_write(stream, msg, strlen(msg));
-   
+    quicly_stream_t *stream = quicly_get_stream(conn, 0);
+
+    if (!stream) {
+        quicly_open_stream(conn, &stream, 0);
+    }
+    assert(stream != NULL);
+
+    const char *msg = "client is alive... say Ping\n";
+    int ret = quicly_streambuf_egress_write(stream, msg, strlen(msg));
+
     if (ret != 0) {
         log_warn("quic stream %ld failed to send heart beat message w/ error  %d.\n", stream->stream_id , ret);
     }
@@ -176,7 +179,7 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
     assert(stream != NULL);
 
     quicly_streambuf_egress_write(stream, buf, len);
-    //quicly_streambuf_egress_shutdown(stream);
+    quicly_streambuf_egress_shutdown(stream);
     //printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
 
     return 0;
@@ -569,9 +572,6 @@ int main(int argc, char** argv)
 
     ev_init(&client_timeout, &client_timeout_cb);
     client_refresh_timeout();
-
-    //int runtime_s = 3600;
-    //client_set_quit_after(runtime_s);
 
     ev_run(loop, 0);
 
