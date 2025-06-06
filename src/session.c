@@ -54,7 +54,7 @@ session_t *find_session_q2t(session_t **hh, long int stream_id)
 void delete_session(session_t **t2q, session_t **q2t, session_t *s)
 {
     if (!s)
-    return;
+        return;
 
     if (t2q)
         HASH_DELETE(hh_t2q, *t2q, s);
@@ -65,3 +65,21 @@ void delete_session(session_t **t2q, session_t **q2t, session_t *s)
     return;
 }
 
+void detach_stream(quicly_stream_t *stream)
+{
+    stream->callbacks = &quicly_stream_noop_callbacks;
+    stream->data = NULL;
+    stream = NULL;
+}
+
+
+void close_stream(quicly_stream_t *stream, quicly_error_t err)
+{
+    if (!quicly_sendstate_transfer_complete(&(stream->sendstate)))
+        quicly_reset_stream(stream, err);
+
+    if (!quicly_recvstate_transfer_complete(&(stream->recvstate)))
+        quicly_request_stop(stream, err);
+
+    detach_stream(stream);
+}

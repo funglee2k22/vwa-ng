@@ -1,6 +1,7 @@
 #include "client.h"
 #include "client_stream.h"
 #include "common.h"
+#include "session.h"
 #include <ev.h>
 
 #include <getopt.h>
@@ -189,20 +190,40 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
 void client_cleanup(int fd)
 {
     session_t *s = find_session_t2q(&ht_tcp_to_quic, fd);
+    log_debug("closing tcp fd: %d, stream: %ld.\n", fd, (s != NULL) ? s->stream->stream_id: -1);
 
-    if (s) {
-        delete_session(&ht_tcp_to_quic, &ht_quic_to_tcp, s);
-        quicly_stream_t *stream = quicly_get_stream(conn, s->stream_id);
-        assert(stream != NULL);
-        if (s->t2q_buf)
-            free(s->t2q_buf);
-        if (s->q2t_buf)
-            free(s->q2t_buf);
-        quicly_streambuf_egress_shutdown(stream);
-        free(s);
+
+    if (!s) {
+        close(fd);
+        return;
     }
 
+    if (s->t2q_buf)
+        free(s->t2q_buf);
+
+    if (s->q2t_buf)
+        free(s->q2t_buf);
+
+    if (s->tcp_read_watcher) {
+        ev_io_stop(loop, s->tcp_read_watcher);
+        free(s->tcp_read_watcher);
+    }
+
+    if (s->tcp_write_watcher) {
+        ev_io_stop(loop, s->tcp_write_watcher);
+        free(s->tcp_write_watcher);
+    }
+
+    quicly_stream_t *stream = quicly_get_stream(conn, s->stream_id);
+    assert(stream != NULL);
+
+    close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
+    detach_stream(stream);
+
+    delete_session(&ht_tcp_to_quic, &ht_quic_to_tcp, s);
+    free(s);
     close(fd);
+
     return;
 }
 
@@ -210,11 +231,10 @@ void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
 {
     int fd = w->fd;
     session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
+
     if (!session) {
-        printf("could not find quic connection for tcp fd: %d.\n", fd);
+        log_warn("could not find quic connection for tcp fd: %d.\n", fd);
         client_cleanup(fd);
-        ev_io_stop(loop, w);
-        free(w);
         return;
     }
 
@@ -237,14 +257,12 @@ void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
 
     if (bytes_sent == -1) {
        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            fprintf(stderr, "tcp %d write is blocked with error %d, %s\n", fd, errno, strerror(errno));
+            log_warn("tcp %d write is blocked with error %d, %s\n", fd, errno, strerror(errno));
         } else {
-            fprintf(stderr, "tcp %d write error %d, %s\n", fd, errno, strerror(errno));
+            log_warn("tcp %d write error %d, %s\n", fd, errno, strerror(errno));
             //TODO should we close stream also ?
             //quicly_streambuf_destroy(stream, QUICLY_ERROR_STREAM_STATE);
-            ev_io_stop(loop, w);
             client_cleanup(fd);
-            free(w);
             return;
         }
     }
@@ -286,10 +304,8 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
     int fd = w->fd;
     session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
     if (!session) {
-        fprintf(stderr, "could not find session for tcp %d. \n", fd);
-        ev_io_stop(loop, w);
-        free(w);
-        close(fd);
+        log_info("could not find session for tcp %d. \n", fd);
+        client_cleanup(fd);
         return;
     }
 
@@ -301,7 +317,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         session->t2q_read_offset += read_bytes;
         int ret = write_to_quic_stream_egress_buf(session);
         if (ret != 0) {
-            printf("fd: %d failed to write into quic stream.\n", fd);
+            log_warn("fd: %d failed to write into quic stream.\n", fd);
             return;
         }
         base = session->t2q_buf + session->t2q_read_offset;
@@ -311,22 +327,17 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     if (read_bytes == 0) {
          // tcp connection has been closed.
-        printf("fd: %d remote peer closed.\n", fd);
-        ev_io_stop(loop, w);
+        log_info("fd: %d remote peer closed.\n", fd);
         client_cleanup(fd);
-        free(w);
         return;
     }
 
     if(read_bytes < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        //Nothing to read.
-        //printf("fd: %d noththing to read.\n");
-        } else {
-            printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
-            ev_io_stop(loop, w);
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             client_cleanup(fd);
-            free(w);
+        } else {
+            log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }
     }
 
@@ -343,6 +354,8 @@ session_t *client_create_session(int fd, quicly_stream_t *stream)
     session->fd = fd;
     session->stream_id = stream->stream_id;
     session->conn = stream->conn;
+    session->stream = stream;
+    session->stream_active = true;
 
     session->t2q_buf = malloc(APP_BUF_SIZE);
     session->q2t_buf = malloc(APP_BUF_SIZE);
@@ -353,6 +366,19 @@ session_t *client_create_session(int fd, quicly_stream_t *stream)
     return session;
 }
 
+static void inline client_send_ctrl_frame(quicly_stream_t *stream, struct sockaddr_in *sa, struct sockaddr_in *da)
+{
+    frame_t ctrl_frame;
+    ctrl_frame.type = 1;
+    memcpy(&(ctrl_frame.s.src), sa, sizeof(struct sockaddr_in));
+    memcpy(&(ctrl_frame.s.dst), da, sizeof(struct sockaddr_in));
+
+    //send clt side session info to server;
+    quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));
+
+    return;
+
+}
 
 void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
 {
@@ -376,8 +402,10 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
         return;
     }
 
-    printf("Accepted client %s:%d ", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port));
-    printf("-> %s:%d on fd %d\n", inet_ntoa(da.sin_addr), ntohs(da.sin_port), fd);
+    char str1[1024], str2[1024]; ;
+    snprintf(str1, sizeof(str1), "Accepted client %s:%d ", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port));
+    snprintf(str2, sizeof(str2), " %s:%d on fd %d\n", inet_ntoa(da.sin_addr), ntohs(da.sin_port), fd);
+    log_info("%s -> %s\n", str1, str2);
 
     //open quicly stream;
     quicly_stream_t *stream = NULL;
@@ -391,14 +419,9 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     add_to_hash_t2q(&ht_tcp_to_quic, session);
     add_to_hash_q2t(&ht_quic_to_tcp, session);
 
-    frame_t ctrl_frame;
-    ctrl_frame.type = 1;
-    memcpy(&(ctrl_frame.s.src), &sa, sizeof(sa));
-    memcpy(&(ctrl_frame.s.dst), &da, sizeof(da));
+    client_send_ctrl_frame(stream, &sa, &da);
 
-    //send clt side session info to server;
-    quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));
-
+    //preparing ev watchers
     ev_io *client_tcp_read_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(client_tcp_read_watcher, client_tcp_read_cb, fd, EV_READ);
     ev_io_start(loop, client_tcp_read_watcher);
@@ -406,6 +429,9 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     ev_io *client_tcp_write_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(client_tcp_write_watcher, client_tcp_write_cb, fd, EV_WRITE);
     ev_io_start(loop, client_tcp_write_watcher);
+
+    session->tcp_read_watcher = client_tcp_read_watcher;
+    session->tcp_write_watcher = client_tcp_write_watcher;
 
     return;
 }

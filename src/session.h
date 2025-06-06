@@ -17,7 +17,7 @@ typedef struct session {
     long int stream_id;      // on both client and server, stream_id is the key
     int fd;
     quicly_stream_t *stream;
-    bool stream_inactive; 
+    bool stream_active;
     struct sockaddr_in sa;   // TCP socket src addr
     struct sockaddr_in da;   // TCP socket original dst addr
     quicly_conn_t *conn;     // quicly_conn_t *conn used by quicly stream
@@ -26,7 +26,7 @@ typedef struct session {
         bool ctrl_frame_sent;
     };
     ev_io *tcp_read_watcher;
-    ev_io *tcp_write_wathcer;
+    ev_io *tcp_write_watcher;
     void *t2q_buf;
     void *q2t_buf;
     size_t buf_len;
@@ -39,11 +39,11 @@ typedef struct session {
 } session_t;
 
 void add_to_hash_t2q(session_t **hh, session_t *s);
-
 session_t *find_session_t2q(session_t **hh, int fd);
-
 void add_to_hash_q2t(session_t **hh, session_t *s);
-
 session_t *find_session_q2t(session_t **hh, long int stream_id);
-
 void delete_session(session_t **t2q, session_t **q2t, session_t *s);
+
+void close_stream(quicly_stream_t *stream, quicly_error_t err);
+void detach_stream(quicly_stream_t *stream);
+

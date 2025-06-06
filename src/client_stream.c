@@ -86,10 +86,11 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
 static void client_ctrl_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
     if (len == 0) return;
-    fprintf(stdout, "ctrl stream receive %zu bytes.\n", len);
-    //TODO
+    //log_debug("ctrl stream receive %zu bytes.\n", len);
     //client side ctrl stream handling.
     quicly_stream_sync_recvbuf(stream, len);
+
+    return;
 }
 
 static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
