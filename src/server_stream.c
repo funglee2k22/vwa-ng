@@ -35,6 +35,7 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     struct sockaddr_in *sa = (struct sockaddr_in *) &(ns->sa);
     ns->stream_id = stream_id;
     ns->conn = stream->conn;
+    ns->stream = stream;
 
     int fd = create_tcp_connection((struct sockaddr *) da);
     if (fd < 0) {
@@ -72,6 +73,9 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     ev_io *socket_write_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(socket_write_watcher, server_tcp_write_cb, fd, EV_WRITE);
     ev_io_start(loop, socket_write_watcher);
+
+    ns->tcp_read_watcher = socket_read_watcher;
+    ns->tcp_write_watcher = socket_write_watcher;
 
     return ns;
 };

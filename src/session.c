@@ -91,12 +91,6 @@ static inline void release_resources(session_t *s)
     if (!s)
         return;
 
-    if (s->t2q_buf)
-        free(s->t2q_buf);
-
-    if (s->q2t_buf)
-        free(s->q2t_buf);
-
     if (s->tcp_read_watcher) {
         ev_io_stop(loop, s->tcp_read_watcher);
         free(s->tcp_read_watcher);
@@ -106,6 +100,12 @@ static inline void release_resources(session_t *s)
         ev_io_stop(loop, s->tcp_write_watcher);
         free(s->tcp_write_watcher);
     }
+
+    if (s->t2q_buf)
+        free(s->t2q_buf);
+
+    if (s->q2t_buf)
+        free(s->q2t_buf);
 
     return;
 }
@@ -119,6 +119,8 @@ static void close_session(session_t *session)
     //remove session from hash_table
     delete_session_from_hh(&ht_tcp_to_quic, &ht_quic_to_tcp, session);
 
+    release_resources(session);
+
     //closing quic stream
     quicly_stream_t *stream = session->stream;
     close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
@@ -127,9 +129,8 @@ static void close_session(session_t *session)
     //close tcp fd
     close(session->fd);
 
-    release_resources(session);
-
     free(session);
+
     return;
 }
 
@@ -152,7 +153,6 @@ void clean_up_from_tcp(session_t **hh, int fd)
 void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_t err)
 {
     assert(stream != NULL);
-
     session_t *session = find_session_q2t(hh, stream->stream_id);
 
     if (!session) {
@@ -162,7 +162,7 @@ void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_
         return;
     }
 
-    log_debug("closing session for tcp fd %d <-> quic stream %ld with quicly error code (%ld). \n",
+    log_warn("closing session for tcp fd %d <-> quic stream %ld with quicly error code (%ld). \n",
                                    session->fd, session->stream->stream_id, err);
 
     //note: we override the quicly error code for stream close.
@@ -171,6 +171,7 @@ void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_
     }
 
     close_session(session);
+
     return;
 }
 
