@@ -45,7 +45,8 @@ static void report_cb(EV_P_ ev_timer *w, int revents)
 
 static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
-    fprintf(stderr, "received STOP_SENDING: %li\n", err);
+    log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
+    clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
@@ -95,7 +96,8 @@ static void client_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
 static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
 {
-    fprintf(stderr, "received RESET_STREAM: %li\n", err);
+    log_info("stream %ld, received RESET_STREAM: %li\n", stream->stream_id, err);
+    //FIXME do we need to terminate session here ?
 }
 
 static const quicly_stream_callbacks_t client_stream_callbacks = {
