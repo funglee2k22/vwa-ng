@@ -17,48 +17,10 @@ int create_tcp_connection(struct sockaddr *sa);
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
 void server_tcp_write_cb(EV_P_ ev_io *w, int revents);
 
-
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
-    printf("%s stream-id=%li\n", __func__, stream->stream_id);
-    fprintf(stderr, "received STOP_SENDING: %li\n", err);
-    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
-}
-
-// tcp-side error happens, or closed.
-// clean up
-void server_cleanup_tcp_side(int fd)
-{
-    session_t *s = find_session_t2q(&ht_tcp_to_quic, fd);
-
-    if (s)
-        delete_session(&ht_tcp_to_quic, &ht_quic_to_tcp, s);
-
-    if (fd)
-        close(fd);
-
-    if (!s)
-       return;
-
-    if (s->conn) {
-        long int stream_id = s->stream_id;
-        quicly_stream_t *stream = quicly_get_stream(s->conn, stream_id);
-        if (stream) {
-            quicly_streambuf_egress_shutdown(stream);
-            //quicly_streambuf_destroy(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
-            //free(stream);
-        }
-    }
-
-    if (s->t2q_buf)
-        free(s->t2q_buf);
-
-    if (s->q2t_buf);
-       free(s->q2t_buf);
-
-    free(s);
-
-    return;
+    log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
+    clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
 session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
@@ -224,9 +186,9 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
 
     if (!session) {
         printf("could not find quic connection for tcp fd: %d.\n", fd);
-        server_cleanup_tcp_side(fd);
         ev_io_stop(loop, w);
         free(w);
+        close(fd);
         return;
     }
 
@@ -254,9 +216,7 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
             fprintf(stderr, "tcp %d write error %d, %s\n", fd, errno, strerror(errno));
             //TODO should we close stream also ?
             //quicly_streambuf_destroy(stream, QUICLY_ERROR_STREAM_STATE);
-            server_cleanup_tcp_side(fd);
-            ev_io_stop(loop, w);
-            free(w);
+            clean_up_from_tcp(&ht_tcp_to_quic, fd);
             return;
         }
     }
@@ -322,18 +282,14 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     if (read_bytes == 0) {
          // tcp connection has been closed.
         fprintf(stderr, "fd: %d remote peer closed.\n", fd);
-        ev_io_stop(loop, w);
-        server_cleanup_tcp_side(fd);
-        free(w);
+        clean_up_from_tcp(&ht_tcp_to_quic, fd);
     } else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
         //Nothing to read.
         //printf("fd: %d noththing to read errno: %d, %s.\n", fd, errno, strerror(errno));
         } else {
             printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
-            ev_io_stop(loop, w);
-            server_cleanup_tcp_side(fd);
-            free(w);
+            clean_up_from_tcp(&ht_tcp_to_quic, fd);
         }
     }
 

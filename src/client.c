@@ -187,46 +187,6 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
 
 }
 
-void client_cleanup(int fd)
-{
-    session_t *s = find_session_t2q(&ht_tcp_to_quic, fd);
-    log_debug("closing tcp fd: %d, stream: %ld.\n", fd, (s != NULL) ? s->stream->stream_id: -1);
-
-
-    if (!s) {
-        close(fd);
-        return;
-    }
-
-    if (s->t2q_buf)
-        free(s->t2q_buf);
-
-    if (s->q2t_buf)
-        free(s->q2t_buf);
-
-    if (s->tcp_read_watcher) {
-        ev_io_stop(loop, s->tcp_read_watcher);
-        free(s->tcp_read_watcher);
-    }
-
-    if (s->tcp_write_watcher) {
-        ev_io_stop(loop, s->tcp_write_watcher);
-        free(s->tcp_write_watcher);
-    }
-
-    quicly_stream_t *stream = quicly_get_stream(conn, s->stream_id);
-    assert(stream != NULL);
-
-    close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
-    detach_stream(stream);
-
-    delete_session(&ht_tcp_to_quic, &ht_quic_to_tcp, s);
-    free(s);
-    close(fd);
-
-    return;
-}
-
 void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
 {
     int fd = w->fd;
@@ -234,7 +194,9 @@ void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
 
     if (!session) {
         log_warn("could not find quic connection for tcp fd: %d.\n", fd);
-        client_cleanup(fd);
+        ev_io_stop(loop, w);
+        free(w);
+        close(fd);
         return;
     }
 
@@ -262,7 +224,7 @@ void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
             log_warn("tcp %d write error %d, %s\n", fd, errno, strerror(errno));
             //TODO should we close stream also ?
             //quicly_streambuf_destroy(stream, QUICLY_ERROR_STREAM_STATE);
-            client_cleanup(fd);
+            clean_up_from_tcp(&ht_tcp_to_quic, fd);
             return;
         }
     }
@@ -305,7 +267,9 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
     session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
     if (!session) {
         log_info("could not find session for tcp %d. \n", fd);
-        client_cleanup(fd);
+        ev_io_stop(loop, w);
+        free(w);
+        close(fd);
         return;
     }
 
@@ -328,14 +292,14 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
     if (read_bytes == 0) {
          // tcp connection has been closed.
         log_info("fd: %d remote peer closed.\n", fd);
-        client_cleanup(fd);
+        clean_up_from_tcp(&ht_tcp_to_quic, fd);
         return;
     }
 
     if(read_bytes < 0) {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
-            client_cleanup(fd);
+            clean_up_from_tcp(&ht_tcp_to_quic, fd);
         } else {
             log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }

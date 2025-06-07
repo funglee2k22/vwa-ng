@@ -38,6 +38,8 @@ typedef struct session {
     UT_hash_handle hh_q2t;    //
 } session_t;
 
+extern struct ev_loop *loop;
+
 void add_to_hash_t2q(session_t **hh, session_t *s);
 session_t *find_session_t2q(session_t **hh, int fd);
 void add_to_hash_q2t(session_t **hh, session_t *s);
@@ -46,4 +48,7 @@ void delete_session(session_t **t2q, session_t **q2t, session_t *s);
 
 void close_stream(quicly_stream_t *stream, quicly_error_t err);
 void detach_stream(quicly_stream_t *stream);
+
+void clean_up_from_tcp(session_t **hh, int fd);
+void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_t err);
 
