@@ -162,12 +162,12 @@ void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_
         return;
     }
 
-    log_warn("closing session for tcp fd %d <-> quic stream %ld with quicly error code (%ld). \n",
+    log_debug("closing session for tcp fd %d <-> quic stream %ld with quicly error code (%ld). \n",
                                    session->fd, session->stream->stream_id, err);
 
     //note: we override the quicly error code for stream close.
     if (err != QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0)) {
-        log_error("quicly stream %ld, closed w/ error %ld.\n", stream->stream_id, err);
+        log_debug("quicly stream %ld, closed w/ error %ld.\n", stream->stream_id, err);
     }
 
     close_session(session);

@@ -19,7 +19,7 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents);
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
-    log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
+    log_debug("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
     clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
