@@ -79,6 +79,11 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
         actual_read_len = len;
     }
 
+
+#ifdef USE_EV_EVENT_FEED
+    ev_feed_event(loop, session->tcp_write_watcher, EV_WRITE);
+#endif
+
     quicly_stream_sync_recvbuf(stream, actual_read_len);
 
     return;

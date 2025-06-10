@@ -33,6 +33,7 @@ session_t *ht_quic_to_tcp = NULL;
 session_t *ht_tcp_to_quic = NULL;
 
 
+
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
 
@@ -48,7 +49,7 @@ void client_refresh_timeout()
 {
     int64_t timeout = clamp_int64(quicly_get_first_timeout(conn) - client_ctx.now->cb(client_ctx.now),
                                   1, 200);
-    client_timeout.repeat = 5;
+    client_timeout.repeat = timeout / 1000.;
     ev_timer_again(EV_DEFAULT, &client_timeout);
 }
 
@@ -392,7 +393,9 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
 
     ev_io *client_tcp_write_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(client_tcp_write_watcher, client_tcp_write_cb, fd, EV_WRITE);
+#ifndef USE_EV_EVENT_FEED
     ev_io_start(loop, client_tcp_write_watcher);
+#endif
 
     session->tcp_read_watcher = client_tcp_read_watcher;
     session->tcp_write_watcher = client_tcp_write_watcher;
@@ -553,15 +556,19 @@ int main(int argc, char** argv)
     ev_io_init(&udp_read_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
     ev_io_start(loop, &udp_read_watcher);
 
+#if 0
     ev_io_init(&udp_write_watcher, &client_quic_write_cb, client_quic_socket, EV_WRITE);
     ev_io_start(loop, &udp_write_watcher);
+#endif
 
     ev_io tcp_socket_accept_watcher;
     ev_io_init(&tcp_socket_accept_watcher, &client_tcp_accept_cb, client_tcp_socket, EV_READ);
     ev_io_start(loop, &tcp_socket_accept_watcher);
 
-    ev_init(&client_timeout, &client_timeout_cb);
-    client_refresh_timeout();
+    //ev_init(&client_timeout, &client_timeout_cb);
+    //client_refresh_timeout();
+    ev_timer_init(&client_timeout, &client_timeout_cb, 0.1, 0.0);
+    ev_timer_start(EV_DEFAULT, &client_timeout);
 
     ev_run(loop, 0);
 

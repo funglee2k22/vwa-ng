@@ -168,6 +168,8 @@ static void server_udp_read_cb(EV_P_ ev_io *w, int revents)
         perror("recvfrom failed");
         fprintf(stderr, "udp sk %d recvfrom() returns with errno %d, %s.\n", w->fd, errno, strerror(errno));
     }
+
+    //server_send_pending();
 }
 
 static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
@@ -243,11 +245,17 @@ int main(int argc, char** argv)
     ev_io_init(&udp_read_watcher, &server_udp_read_cb, udp_server_socket, EV_READ);
     ev_io_start(loop, &udp_read_watcher);
 
+#if 0
+    /* due to high CPU usage on UDP socket w/ EV_WRITE event handler, we decide to use
+     * timer to handle UDP writes.
+     */
     ev_io udp_write_watcher;
     ev_io_init(&udp_write_watcher, &server_udp_write_cb, udp_server_socket, EV_WRITE);
     ev_io_start(loop, &udp_write_watcher);
+#endif
 
-    ev_init(&server_timeout, &server_timeout_cb);
+    ev_timer_init(&server_timeout, &server_timeout_cb, 2., 0.0);
+    ev_timer_start(EV_DEFAULT, &server_timeout);
 
     ev_run(loop, 0);
 
