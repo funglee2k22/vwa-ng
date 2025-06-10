@@ -4,12 +4,9 @@
 #include <stdint.h>
 #include "common.h"
 
-void quit_client();
+#define USE_EV_EVENT_FEED
 
-//Session HashTable Related
-//void add_session(session_t *t);
-//session_t *find_session(long int stream_id); 
-//void del_session(long int stream_id);
+void quit_client();
 
 session_t *hash_find_by_tcp_fd(int fd);
 session_t *hash_find_by_stream_id(long int stream_id);
