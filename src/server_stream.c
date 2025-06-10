@@ -17,6 +17,8 @@ int create_tcp_connection(struct sockaddr *sa);
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
 void server_tcp_write_cb(EV_P_ ev_io *w, int revents);
 
+#define USE_EV_EVENT_FEED
+
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
     log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
@@ -72,7 +74,9 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     //add socket write watcher
     ev_io *socket_write_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(socket_write_watcher, server_tcp_write_cb, fd, EV_WRITE);
+#ifndef USE_EV_EVENT_FEED
     ev_io_start(loop, socket_write_watcher);
+#endif
 
     ns->tcp_read_watcher = socket_read_watcher;
     ns->tcp_write_watcher = socket_write_watcher;
@@ -133,6 +137,10 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     }
 
     quicly_stream_sync_recvbuf(stream, actual_read_len);
+#ifdef USE_EV_EVENT_FEED
+    if (s->q2t_read_offset > s->q2t_write_offset)
+        ev_feed_event(loop, s->tcp_write_watcher, EV_WRITE);
+#endif
     return;
 
 }
@@ -218,8 +226,6 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
             fprintf(stderr, "tcp %d write is blocked with error %d, %s\n", fd, errno, strerror(errno));
         } else {
             fprintf(stderr, "tcp %d write error %d, %s\n", fd, errno, strerror(errno));
-            //TODO should we close stream also ?
-            //quicly_streambuf_destroy(stream, QUICLY_ERROR_STREAM_STATE);
             clean_up_from_tcp(&ht_tcp_to_quic, fd);
             return;
         }
@@ -285,18 +291,18 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     if (read_bytes == 0) {
          // tcp connection has been closed.
-        fprintf(stderr, "fd: %d remote peer closed.\n", fd);
-        clean_up_from_tcp(&ht_tcp_to_quic, fd);
+        log_debug("fd: %d remote peer closed.\n", fd);
     } else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        //Nothing to read.
-        //printf("fd: %d noththing to read errno: %d, %s.\n", fd, errno, strerror(errno));
+            //Nothing to read.
+            //printf("fd: %d noththing to read errno: %d, %s.\n", fd, errno, strerror(errno));
+            return;
         } else {
-            printf("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
-            clean_up_from_tcp(&ht_tcp_to_quic, fd);
+            log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
         }
     }
 
+    clean_up_from_tcp(&ht_tcp_to_quic, fd);
     return;
 
 }
