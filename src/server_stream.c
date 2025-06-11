@@ -138,8 +138,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     quicly_stream_sync_recvbuf(stream, actual_read_len);
 #ifdef USE_EV_EVENT_FEED
-    if (s->q2t_read_offset > s->q2t_write_offset)
-        ev_feed_event(loop, s->tcp_write_watcher, EV_WRITE);
+    ev_feed_event(loop, s->tcp_write_watcher, EV_WRITE);
 #endif
     return;
 
