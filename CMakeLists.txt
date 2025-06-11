@@ -7,7 +7,7 @@ add_subdirectory(extern)
 
 add_executable(new-clt src/uthash.h src/common.h src/common.c src/client.h
 	        src/session.h src/session.c
-                src/client_stream.h src/client_stream.c src/client.c) 
+                src/client_stream.h src/client_stream.c src/client.c)
 target_link_libraries(new-clt PRIVATE quicly ev picotls)
 target_compile_definitions(new-clt PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(new-clt PRIVATE
@@ -19,7 +19,7 @@ target_compile_options(new-clt PRIVATE
 
 add_executable(new-srv src/uthash.h src/common.h src/common.c src/server.h
 	        src/session.h src/session.c
-                src/server_stream.h src/server_stream.c src/server.c) 
+                src/server_stream.h src/server_stream.c src/server.c)
 target_link_libraries(new-srv PRIVATE quicly ev picotls)
 target_compile_definitions(new-srv PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(new-srv PRIVATE
@@ -29,9 +29,9 @@ target_compile_options(new-srv PRIVATE
 )
 
 #----------------
-#tests and small poc 
+#tests and small poc
 #---------------
-add_executable(test-uthash src/uthash.h test/uthash-test/session.h test/uthash-test/test-uthash-session.c ) 
+add_executable(test-uthash src/uthash.h test/uthash-test/session.h test/uthash-test/test-uthash-session.c )
 target_link_libraries(test-uthash PRIVATE quicly ev picotls)
 target_compile_definitions(test-uthash PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(test-uthash PRIVATE
@@ -40,4 +40,26 @@ target_compile_options(test-uthash PRIVATE
     -Werror=shift-count-overflow
 )
 
-add_executable(test-udp-tproxy test/udp-tproxy-test/udp-tproxy-server.c ) 
+add_executable(test-udp-tproxy test/udp-tproxy-test/udp-tproxy-server.c )
+
+#
+add_executable(quic-test
+    poc-remove-app-buf/main.c
+    poc-remove-app-buf/client.h
+    poc-remove-app-buf/client.c
+    poc-remove-app-buf/client_stream.h
+    poc-remove-app-buf/client_stream.c
+    poc-remove-app-buf/server.h
+    poc-remove-app-buf/server.c
+    poc-remove-app-buf/server_stream.h
+    poc-remove-app-buf/server_stream.c
+    poc-remove-app-buf/common.h
+    poc-remove-app-buf/common.c)
+
+target_link_libraries(quic-test PRIVATE quicly ev picotls)
+target_compile_definitions(quic-test PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
+target_compile_options(quic-test PRIVATE
+    -Werror=implicit-function-declaration
+    -Werror=incompatible-pointer-types
+    -Werror=shift-count-overflow
+)

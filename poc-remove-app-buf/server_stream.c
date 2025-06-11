@@ -48,13 +48,17 @@ static void server_stream_destroy(quicly_stream_t *stream, quicly_error_t err)
 }
 
 static void server_stream_send_shift(quicly_stream_t *stream, size_t delta)
-{
+{ 
+    printf("func: %s, line: %d ,", __func__, __LINE__);
+    printf("stream: %ld, delta: %ld\n", stream->stream_id, delta); 
     server_stream *s = stream->data;
     s->acked_offset += delta;
 }
 
 static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *dst, size_t *len, int *wrote_all)
-{
+{ 
+    printf("func: %s, line: %d ,", __func__, __LINE__);
+    printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all)); 
     server_stream *s = stream->data;
     uint64_t data_off = s->acked_offset + off;
 
@@ -68,6 +72,8 @@ static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *d
     }
 
     memset(dst, 0x58, *len);
+    printf("func: %s, line: %d ,", __func__, __LINE__);
+    printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all)); 
 }
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
