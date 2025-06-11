@@ -18,10 +18,10 @@
 static int client_socket = -1;
 static quicly_conn_t *conn = NULL;
 static ev_timer client_timeout;
-static quicly_context_t client_ctx;
+quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
-static int64_t start_time = 0;
-static int64_t connect_time = 0;
+int64_t start_time = 0;
+int64_t connect_time = 0;
 static bool quit_after_first_byte = false;
 static ptls_iovec_t resumption_token;
 

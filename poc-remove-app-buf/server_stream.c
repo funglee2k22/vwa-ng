@@ -60,7 +60,8 @@ static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *d
     printf("func: %s, line: %d ,", __func__, __LINE__);
     printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all)); 
     server_stream *s = stream->data;
-    uint64_t data_off = s->acked_offset + off;
+    uint64_t data_off = s->acked_offset + off; 
+    static int count; 
 
     if(data_off + *len < s->target_offset) {
         *wrote_all = 0;
@@ -70,8 +71,9 @@ static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *d
         *len = s->target_offset - data_off;
         assert(data_off + *len == s->target_offset);
     }
-
-    memset(dst, 0x58, *len);
+    count += 1; 
+    char c = '1' + count; 
+    memset(dst, c, *len);
     printf("func: %s, line: %d ,", __func__, __LINE__);
     printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all)); 
 }

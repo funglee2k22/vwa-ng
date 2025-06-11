@@ -46,20 +46,40 @@ static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    if(first_receive) {
+    if (first_receive) {
         bytes_received = 0;
         first_receive = false;
-        ev_timer_init(&report_timer, report_cb, 1.0, 1.0);
-        ev_timer_start(ev_default_loop(0), &report_timer);
-        on_first_byte();
+        //ev_timer_init(&report_timer, report_cb, 1.0, 1.0);
+        //ev_timer_start(ev_default_loop(0), &report_timer);
+        //on_first_byte();
     }
 
-    if(len == 0) {
+    if (len == 0) {
+        return;
+    }
+   
+    extern quicly_context_t client_ctx; 
+    extern int64_t connect_time, start_time; 
+
+    connect_time = client_ctx.now->cb(client_ctx.now);
+   
+    printf("func: %s, line: %d, time: %ld ", __func__, __LINE__, connect_time - start_time); 
+    printf("stream: %ld, off: %ld, src: %p, len: %ld \n", stream->stream_id, off, src, len);
+
+    quicly_error_t ret = 0; 
+    if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0) { 
+        printf("quicly_streambuf_ingress_receive() returns with %ld. \n", ret);
         return;
     }
 
-    bytes_received += len;
-    quicly_stream_sync_recvbuf(stream, len);
+    size_t actual_read = (len > 0x100) ? 0x100: len; 
+    bytes_received += actual_read;
+    printf("before sync_recvbuf\n");
+    quicly_stream_sync_recvbuf(stream, actual_read); 
+    
+    printf("stream: %ld, off: %ld, src: %p, len: %ld ", stream->stream_id, off, src, len);
+    printf("actual_read: %ld, bytes_received: %ld\n", actual_read, bytes_received);
+    fflush(stdout);
 }
 
 static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
