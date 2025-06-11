@@ -181,7 +181,6 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
     assert(stream != NULL);
 
     quicly_streambuf_egress_write(stream, buf, len);
-    quicly_streambuf_egress_shutdown(stream);
     //printf("write %d bytes to stream %ld egress buf.\n", len, stream->stream_id);
 
     return 0;
