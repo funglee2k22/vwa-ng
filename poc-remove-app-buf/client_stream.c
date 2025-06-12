@@ -57,29 +57,36 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     if (len == 0) {
         return;
     }
-   
-    extern quicly_context_t client_ctx; 
-    extern int64_t connect_time, start_time; 
+
+    extern quicly_context_t client_ctx;
+    extern int64_t connect_time, start_time;
 
     connect_time = client_ctx.now->cb(client_ctx.now);
-   
-    printf("func: %s, line: %d, time: %ld ", __func__, __LINE__, connect_time - start_time); 
+
+    printf("func: %s, line: %d, time: %ld ", __func__, __LINE__, connect_time - start_time);
     printf("stream: %ld, off: %ld, src: %p, len: %ld \n", stream->stream_id, off, src, len);
 
-    quicly_error_t ret = 0; 
-    if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0) { 
+    quicly_error_t ret = 0;
+
+    if ((ret = quicly_streambuf_ingress_receive(stream, off, src, len)) != 0) {
         printf("quicly_streambuf_ingress_receive() returns with %ld. \n", ret);
         return;
     }
 
-    size_t actual_read = (len > 0x100) ? 0x100: len; 
-    bytes_received += actual_read;
-    printf("before sync_recvbuf\n");
-    quicly_stream_sync_recvbuf(stream, actual_read); 
-    
-    printf("stream: %ld, off: %ld, src: %p, len: %ld ", stream->stream_id, off, src, len);
-    printf("actual_read: %ld, bytes_received: %ld\n", actual_read, bytes_received);
-    fflush(stdout);
+
+    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+
+    printf("input.base: %p, input.len: %ld.\n", input.base, input.len);
+
+    //assume consume first 100 bytes.
+    printf("first 10 bytes of input.base: %.*s\n", 10, input.base);
+    printf("first 10 bytes of src: %.*s.\n", 10, (char *) src);
+
+
+    static int i;
+    i += 1;
+    quicly_streambuf_ingress_shift(stream, input.len - i);
+    //quicly_stream_sync_recvbuf(stream, input.len - i);
 }
 
 static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
