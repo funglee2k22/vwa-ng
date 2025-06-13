@@ -38,7 +38,8 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
 
     int fd = create_tcp_connection((struct sockaddr *) da);
     if (fd < 0) {
-        log_warn("failed to create tcp for stream: %ld. \n", stream->stream_id);
+        log_warn("stream %ld failed to create tcp conn to %s:%d . \n",
+                     stream->stream_id, inet_ntoa(da->sin_addr), ntohs(da->sin_port));
         free(ns);
         return NULL;
     }
@@ -101,6 +102,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         s = create_session(stream, ctrl_frame);
         if (!s) {
             log_error("stream: %ld could not create session.\n", stream_id);
+            //close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
             return;
         }
         s->ctrl_frame_received = true;

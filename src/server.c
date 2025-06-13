@@ -237,10 +237,12 @@ int main(int argc, char** argv)
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);
 
+    //FIXME SIGPIPE need a good handler
+    signal(SIGPIPE, SIG_IGN);
+
     udp_server_socket = srv_setup_quic_listener(address, port_char, keyfile, certfile);
 
     loop = EV_DEFAULT;
-
     ev_io udp_read_watcher;
     ev_io_init(&udp_read_watcher, &server_udp_read_cb, udp_server_socket, EV_READ);
     ev_io_start(loop, &udp_read_watcher);
