@@ -18,7 +18,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
-    log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
+    log_debug("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
     clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
@@ -46,10 +46,12 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     assert(fd > 0);
     set_non_blocking(fd);
     ns->fd = fd;
-    
-    char temp[256] = {0}; 
-    log_info("session quic: %ld <-> tcp: %d  (%s) created.\n",
-            stream->stream_id, fd, get_conn_str(sa, da, temp, sizeof(temp)));
+
+    {
+        char temp[256] = {0};
+        log_debug("session quic: %ld <-> tcp: %d  (%s) created.\n",
+                stream->stream_id, fd, get_conn_str(sa, da, temp, sizeof(temp)));
+    }
 
     ns->t2q_buf = malloc(APP_BUF_SIZE);
     assert(ns->t2q_buf != NULL);
@@ -98,13 +100,16 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         }
         s = create_session(stream, ctrl_frame);
         if (!s) {
-            fprintf(stderr, "stream: %ld could not create session.\n", stream_id);
+            log_error("stream: %ld could not create session.\n", stream_id);
             return;
         }
         s->ctrl_frame_received = true;
-        input.base += sizeof(frame_t);
-        input.len -= sizeof(frame_t);
-        quicly_streambuf_ingress_shift(stream, sizeof(frame_t));
+
+        size_t delta = sizeof(frame_t);
+        input.base += delta;
+        input.len -= delta;
+
+        quicly_streambuf_ingress_safe_shift(stream, off, delta);
     }
 
     if (input.len == 0)
@@ -115,7 +120,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
-        quicly_streambuf_ingress_shift(stream, bytes_sent);
+        quicly_streambuf_ingress_safe_shift(stream, off, bytes_sent);
         if (input.len == 0)
              break;
     }

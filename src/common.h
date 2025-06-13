@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <quicly.h>
+#include <quicly/streambuf.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -32,6 +33,8 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn);
 
 //EV_WRITE TCP socket handler used by both client and server
 void tcp_write_cb(EV_P_ ev_io *w, int revents); 
+
+static inline void quicly_streambuf_ingress_safe_shift(quicly_stream_t *stream, size_t off, size_t delta);
 
 int set_non_blocking(int sockfd);
 
@@ -98,5 +101,15 @@ static char *get_conn_str(struct sockaddr_in *sa, struct sockaddr_in *da, char *
                       inet_ntoa(da->sin_addr), ntohs(da->sin_port));
     snprintf(out, len - 1, "%s -> %s", str_src, str_dst);
     return out;
+}
+
+
+static inline void quicly_streambuf_ingress_safe_shift(quicly_stream_t *stream, size_t off, size_t delta)
+{
+    if (delta <= off)
+         quicly_streambuf_ingress_shift(stream, delta);
+    else
+         quicly_stream_sync_recvbuf(stream, delta);
+    return;
 }
 

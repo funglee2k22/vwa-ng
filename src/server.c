@@ -200,9 +200,9 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
     server_ctx.tls = get_tlsctx();
     server_ctx.stream_open = &stream_open;
     server_ctx.closed_by_remote = &closed_by_remote;
-    server_ctx.transport_params.max_stream_data.uni = UINT32_MAX;
-    server_ctx.transport_params.max_stream_data.bidi_local = UINT32_MAX;
-    server_ctx.transport_params.max_stream_data.bidi_remote = UINT32_MAX;
+    server_ctx.transport_params.max_stream_data.uni = 6 * 1024 * 1024; //UINT32_MAX;
+    server_ctx.transport_params.max_stream_data.bidi_local = 6 * 1024 * 1024; //UINT32_MAX;
+    server_ctx.transport_params.max_stream_data.bidi_remote = 6 * 1024 * 1024; // UINT32_MAX;
 
     load_certificate_chain(server_ctx.tls, cert);
     load_private_key(server_ctx.tls, key);

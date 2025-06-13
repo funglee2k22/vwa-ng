@@ -180,12 +180,12 @@ void tcp_write_cb(EV_P_ ev_io *w, int revents)
         ev_io_stop(loop, w);
         return;
     }
-
+    size_t off = ((quicly_streambuf_t *) (stream->data))->ingress.off;
     size_t bytes_sent = -1;
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
-        quicly_streambuf_ingress_shift(stream, bytes_sent);
+        quicly_streambuf_ingress_safe_shift(stream, off, bytes_sent);
         if (input.len == 0)
              break;
     }
