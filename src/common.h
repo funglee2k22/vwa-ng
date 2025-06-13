@@ -1,13 +1,14 @@
 #pragma once
 
 #include "uthash.h"
-#include "session.h" 
+#include "session.h"
 
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syslog.h> 
+#include <syslog.h>
 #include <quicly.h>
+#include <quicly/streambuf.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -15,20 +16,25 @@
 
 #define HASH_SIZE 10240
 
-typedef struct cpep_frame { 
-    int type; 
-    union { 
-       struct { 
+typedef struct cpep_frame {
+    int type;
+    union {
+       struct {
            struct sockaddr_in src;
-           struct sockaddr_in dst;     //original 
-       } s; 
-    }; 
-} frame_t; 
+           struct sockaddr_in dst;     //original
+       } s;
+    };
+} frame_t;
 
 ptls_context_t *get_tlsctx();
 
 struct addrinfo *get_address(const char *host, const char *port);
 bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn);
+
+//EV_WRITE TCP socket handler used by both client and server
+void tcp_write_cb(EV_P_ ev_io *w, int revents); 
+
+static inline void quicly_streambuf_ingress_safe_shift(quicly_stream_t *stream, size_t off, size_t delta);
 
 int set_non_blocking(int sockfd);
 
@@ -83,4 +89,27 @@ static inline uint64_t get_current_pid()
     return pid;
 }
 
+static char *get_conn_str(struct sockaddr_in *sa, struct sockaddr_in *da, char *out, size_t len)
+{
+#define TEMP_STR_LEN 64
+    char str_src[TEMP_STR_LEN] = {0}, str_dst[TEMP_STR_LEN] = {0};
+
+    snprintf(str_src, sizeof(str_src), "%s:%d",
+                      inet_ntoa(sa->sin_addr), ntohs(sa->sin_port));
+
+    snprintf(str_dst, sizeof(str_dst), "%s:%d",
+                      inet_ntoa(da->sin_addr), ntohs(da->sin_port));
+    snprintf(out, len - 1, "%s -> %s", str_src, str_dst);
+    return out;
+}
+
+
+static inline void quicly_streambuf_ingress_safe_shift(quicly_stream_t *stream, size_t off, size_t delta)
+{
+    if (delta <= off)
+         quicly_streambuf_ingress_shift(stream, delta);
+    else
+         quicly_stream_sync_recvbuf(stream, delta);
+    return;
+}
 

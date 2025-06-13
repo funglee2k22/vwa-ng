@@ -28,12 +28,9 @@ typedef struct session {
     ev_io *tcp_read_watcher;
     ev_io *tcp_write_watcher;
     void *t2q_buf;
-    void *q2t_buf;
     size_t buf_len;
     size_t t2q_read_offset;
     size_t t2q_write_offset;
-    size_t q2t_read_offset;
-    size_t q2t_write_offset;
     UT_hash_handle hh_t2q;    //uthash requires different handle for each hashmap
     UT_hash_handle hh_q2t;    //
 } session_t;

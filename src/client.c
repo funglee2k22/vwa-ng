@@ -187,52 +187,6 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
 
 }
 
-void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
-{
-    int fd = w->fd;
-    session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
-
-    if (!session) {
-        log_warn("could not find quic connection for tcp fd: %d.\n", fd);
-        ev_io_stop(loop, w);
-        free(w);
-        close(fd);
-        return;
-    }
-
-    ssize_t len = session->q2t_read_offset - session->q2t_write_offset;
-    if (len <= 0) { // nothing to sent;
-        session->q2t_read_offset = session->q2t_write_offset = 0;
-        return;
-    }
-
-    ssize_t bytes_sent = -1;
-    char *base = session->q2t_buf + session->q2t_write_offset;
-
-    while ((bytes_sent = write(fd, base, len)) > 0) {
-        session->q2t_write_offset += bytes_sent;
-        base += bytes_sent;
-        len -= bytes_sent;
-        if (len == 0)
-            break;
-    }
-
-    if (bytes_sent == -1) {
-       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            log_warn("tcp %d write is blocked with error %d, %s\n", fd, errno, strerror(errno));
-        } else {
-            log_warn("tcp %d write error %d, %s\n", fd, errno, strerror(errno));
-            //TODO should we close stream also ?
-            //quicly_streambuf_destroy(stream, QUICLY_ERROR_STREAM_STATE);
-            clean_up_from_tcp(&ht_tcp_to_quic, fd);
-            return;
-        }
-    }
-
-    return;
-}
-
-
 static inline int write_to_quic_stream_egress_buf(session_t *s)
 {
     assert(s != NULL);
@@ -322,9 +276,7 @@ session_t *client_create_session(int fd, quicly_stream_t *stream)
     session->stream_active = true;
 
     session->t2q_buf = malloc(APP_BUF_SIZE);
-    session->q2t_buf = malloc(APP_BUF_SIZE);
     session->t2q_read_offset = session->t2q_write_offset = 0;
-    session->q2t_read_offset = session->q2t_write_offset = 0;
     session->buf_len = APP_BUF_SIZE;
 
     return session;
@@ -391,10 +343,7 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     ev_io_start(loop, client_tcp_read_watcher);
 
     ev_io *client_tcp_write_watcher = (ev_io *)malloc(sizeof(ev_io));
-    ev_io_init(client_tcp_write_watcher, client_tcp_write_cb, fd, EV_WRITE);
-#ifndef USE_EV_EVENT_FEED
-    ev_io_start(loop, client_tcp_write_watcher);
-#endif
+    ev_io_init(client_tcp_write_watcher, tcp_write_cb, fd, EV_WRITE);
 
     session->tcp_read_watcher = client_tcp_read_watcher;
     session->tcp_write_watcher = client_tcp_write_watcher;
