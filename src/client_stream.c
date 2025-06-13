@@ -58,33 +58,32 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
         return;
 
     long int stream_id = stream->stream_id;
-    session_t *session = find_session_q2t(&ht_quic_to_tcp, stream_id);
+    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream_id);
 
-    if (!session) {
+    if (!s) {
         //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
         return;
     }
 
-    assert(session != NULL);
+    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+    assert(input.len > 0);
 
-    //copy stream content into the APP write buffer.
-    char *base =session->q2t_buf + session->q2t_read_offset;
-    size_t actual_read_len = session->buf_len - session->q2t_read_offset;
-    if (len > actual_read_len) {
-        memcpy(base, src, actual_read_len);
-        session->q2t_read_offset += actual_read_len;
-    } else {
-        memcpy(base, src, len);
-        session->q2t_read_offset += len;
-        actual_read_len = len;
+    size_t bytes_sent = -1;
+    while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
+        input.base += bytes_sent;
+        input.len -= bytes_sent;
+        quicly_streambuf_ingress_shift(stream, bytes_sent);
+        if (input.len == 0)
+             break;
     }
 
-
-#ifdef USE_EV_EVENT_FEED
-    ev_feed_event(loop, session->tcp_write_watcher, EV_WRITE);
-#endif
-
-    quicly_stream_sync_recvbuf(stream, actual_read_len);
+    if (bytes_sent < 0 && errno == EAGAIN) {
+        /* when stream ingress buf is not empty, and tcp sk is blocking
+           start TCP EV_WRITE watcher */
+        if (input.len > 0) {
+            ev_io_start(loop, s->tcp_write_watcher);
+        }
+    }
 
     return;
 }

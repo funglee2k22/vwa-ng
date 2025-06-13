@@ -6,6 +6,8 @@
 #include <netdb.h>
 #include <memory.h>
 #include <picotls/openssl.h>
+#include <quicly.h>
+#include <quicly/streambuf.h>
 #include <errno.h>
 
 ptls_context_t *get_tlsctx()
@@ -133,8 +135,8 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 {
     char buf[1024];
     va_list args;
-    
-    if (priority > LOG_INFO) 
+
+    if (priority > LOG_INFO)
 	return;
 
     va_start(args, fmt);
@@ -154,3 +156,51 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     return;
 }
 
+void tcp_write_cb(EV_P_ ev_io *w, int revents)
+{
+    int fd = w->fd;
+    extern session_t *ht_tcp_to_quic; 
+    session_t *s = find_session_t2q(&ht_tcp_to_quic, fd);
+
+    if (!s) {
+        printf("could not find quic connection for tcp fd: %d.\n", fd);
+        ev_io_stop(loop, w);
+        free(w);
+        close(fd);
+        return;
+    }
+
+    quicly_stream_t *stream = quicly_get_stream(s->conn, s->stream_id);
+    assert(stream != NULL);
+
+    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+
+    if (input.len == 0) {
+        // nothing to be sent, and we can stop the watcher.
+        ev_io_stop(loop, w);
+        return;
+    }
+
+    size_t bytes_sent = -1;
+    while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
+        input.base += bytes_sent;
+        input.len -= bytes_sent;
+        quicly_streambuf_ingress_shift(stream, bytes_sent);
+        if (input.len == 0)
+             break;
+    }
+
+    if (bytes_sent == -1) {
+       if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            log_info("tcp %d write is blocked with error %d, %s\n",
+                                                     fd, errno, strerror(errno));
+        } else {
+            // if error happens other than EAGAIN. it is a failure, terminate the session.
+            log_info("tcp %d write error %d, %s\n", fd, errno, strerror(errno));
+            clean_up_from_tcp(&ht_tcp_to_quic, fd);
+            return;
+        }
+    }
+
+    return;
+}

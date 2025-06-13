@@ -15,9 +15,6 @@ extern struct ev_loop *loop;
 
 int create_tcp_connection(struct sockaddr *sa);
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
-void server_tcp_write_cb(EV_P_ ev_io *w, int revents);
-
-#define USE_EV_EVENT_FEED
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
@@ -41,7 +38,7 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
 
     int fd = create_tcp_connection((struct sockaddr *) da);
     if (fd < 0) {
-        fprintf(stderr, "failed to create tcp for stream: %ld. \n", stream->stream_id);
+        log_warn("failed to create tcp for stream: %ld. \n", stream->stream_id);
         free(ns);
         return NULL;
     }
@@ -49,18 +46,15 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     assert(fd > 0);
     set_non_blocking(fd);
     ns->fd = fd;
-    fprintf(stdout, "session quic: %ld <-> tcp: %d  (%s:%d -> %s:%d created.\n",
-            stream->stream_id, fd,
-            inet_ntoa(sa->sin_addr), ntohs(sa->sin_port),
-            inet_ntoa(da->sin_addr), ntohs(da->sin_port));
+    
+    char temp[256] = {0}; 
+    log_info("session quic: %ld <-> tcp: %d  (%s) created.\n",
+            stream->stream_id, fd, get_conn_str(sa, da, temp, sizeof(temp)));
 
     ns->t2q_buf = malloc(APP_BUF_SIZE);
-    ns->q2t_buf = malloc(APP_BUF_SIZE);
     assert(ns->t2q_buf != NULL);
-    assert(ns->q2t_buf != NULL);
     ns->buf_len = APP_BUF_SIZE;
     ns->t2q_read_offset = ns->t2q_write_offset = 0;
-    ns->q2t_read_offset = ns->q2t_write_offset = 0;
 
     //add session into hashtables
     add_to_hash_t2q(&ht_tcp_to_quic, ns);
@@ -71,12 +65,9 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     ev_io_init(socket_read_watcher, server_tcp_read_cb, fd, EV_READ);
     ev_io_start(loop, socket_read_watcher);
 
-    //add socket write watcher
+    //add socket write watcher, don't start it unless we have EV_BLOCK happens.
     ev_io *socket_write_watcher = (ev_io *)malloc(sizeof(ev_io));
-    ev_io_init(socket_write_watcher, server_tcp_write_cb, fd, EV_WRITE);
-#ifndef USE_EV_EVENT_FEED
-    ev_io_start(loop, socket_write_watcher);
-#endif
+    ev_io_init(socket_write_watcher, tcp_write_cb, fd, EV_WRITE);
 
     ns->tcp_read_watcher = socket_read_watcher;
     ns->tcp_write_watcher = socket_write_watcher;
@@ -86,8 +77,6 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
 
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    //log_debug("stream: %ld, received %ld bytes.\n", stream->stream_id, len);
-
     if (len == 0)
         return;
 
@@ -96,16 +85,13 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         return;
 
     /* obtain contiguous bytes from the receive buffer */
-    //FIXME  strange... need double check
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    size_t l = input.len;
-    char *base = input.base;
     long int stream_id = stream->stream_id;
 
     session_t *s = find_session_q2t(&ht_quic_to_tcp, stream_id);
 
     if (!s) {
-        frame_t *ctrl_frame = (frame_t *) base;
+        frame_t *ctrl_frame = (frame_t *) (input.base);
         if (ctrl_frame->type != 1) {
             //fprintf(stderr, "stream: %ld received %ld bytes unexpected data.\n", stream_id, len);
             return;
@@ -116,30 +102,32 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             return;
         }
         s->ctrl_frame_received = true;
-        base += sizeof(frame_t);
-        l -= sizeof(frame_t);
-        quicly_stream_sync_recvbuf(stream, sizeof(frame_t));
+        input.base += sizeof(frame_t);
+        input.len -= sizeof(frame_t);
+        quicly_streambuf_ingress_shift(stream, sizeof(frame_t));
     }
 
-    if (l <= 0)
+    if (input.len == 0)
         return;
 
-    char *dst = s->q2t_buf + s->q2t_read_offset;
-    size_t actual_read_len = s->buf_len - s->q2t_read_offset;
-
-    if (l > actual_read_len) {
-        memcpy(dst, base, actual_read_len);
-        s->q2t_read_offset += actual_read_len;
-    } else {
-        memcpy(dst, base, l);
-        s->q2t_read_offset += l;
-        actual_read_len = l;
+    assert(input.len > 0);
+    size_t bytes_sent = -1;
+    while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
+        input.base += bytes_sent;
+        input.len -= bytes_sent;
+        quicly_streambuf_ingress_shift(stream, bytes_sent);
+        if (input.len == 0)
+             break;
     }
 
-    quicly_stream_sync_recvbuf(stream, actual_read_len);
-#ifdef USE_EV_EVENT_FEED
-    ev_feed_event(loop, s->tcp_write_watcher, EV_WRITE);
-#endif
+    if (bytes_sent < 0 && errno == EAGAIN) {
+        /* when stream ingress buf is not empty, and tcp sk is blocking
+           start TCP EV_WRITE watcher */
+        if (input.len > 0) {
+            ev_io_start(loop, s->tcp_write_watcher);
+        }
+    }
+
     return;
 
 }
@@ -159,7 +147,7 @@ int create_tcp_connection(struct sockaddr *sa)
         return -1;
     }
 
-    printf("created tcp %d to connect %s:%d.\n", fd,
+    log_debug("created tcp %d to connect %s:%d.\n", fd,
                    inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
                     ntohs(((struct sockaddr_in *)sa)->sin_port));
 
@@ -189,50 +177,6 @@ int srv_tcp_to_quic(int fd, char *buf, int len)
 
     return 0;
 }
-
-void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
-{
-   int fd = w->fd;
-    session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
-
-    if (!session) {
-        printf("could not find quic connection for tcp fd: %d.\n", fd);
-        ev_io_stop(loop, w);
-        free(w);
-        close(fd);
-        return;
-    }
-
-    ssize_t len = session->q2t_read_offset - session->q2t_write_offset;
-    if (len <= 0) { // nothing to sent;
-        session->q2t_read_offset = session->q2t_write_offset = 0;
-        return;
-    }
-
-    ssize_t bytes_sent = -1;
-    char *base = session->q2t_buf + session->q2t_write_offset;
-
-    while ((bytes_sent = write(fd, base, len)) > 0) {
-        session->q2t_write_offset += bytes_sent;
-        base += bytes_sent;
-        len -= bytes_sent;
-        if (len == 0)
-            break;
-    }
-
-    if (bytes_sent == -1) {
-       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            fprintf(stderr, "tcp %d write is blocked with error %d, %s\n", fd, errno, strerror(errno));
-        } else {
-            fprintf(stderr, "tcp %d write error %d, %s\n", fd, errno, strerror(errno));
-            clean_up_from_tcp(&ht_tcp_to_quic, fd);
-            return;
-        }
-    }
-
-    return;
-}
-
 
 static inline int write_to_quic_stream_egress_buf(session_t *s)
 {
