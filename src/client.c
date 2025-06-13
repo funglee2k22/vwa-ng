@@ -216,7 +216,6 @@ static inline int write_to_quic_stream_egress_buf(session_t *s)
 
 void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 {
-
     int fd = w->fd;
     session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
     if (!session) {
@@ -240,6 +239,8 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         }
         base = session->t2q_buf + session->t2q_read_offset;
         available_len = session->buf_len - session->t2q_read_offset;
+        if (available_len == 0)
+            break;
     }
 
 

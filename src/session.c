@@ -83,7 +83,7 @@ void close_stream(quicly_stream_t *stream, quicly_error_t err)
     if (!quicly_recvstate_transfer_complete(&(stream->recvstate)))
         quicly_request_stop(stream, err);
 
-    detach_stream(stream);
+    //detach_stream(stream);
 }
 
 static inline void release_resources(session_t *s)
