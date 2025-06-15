@@ -268,7 +268,9 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+
     log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
+
     /* remove used bytes from receive buffer */
     quicly_stream_sync_recvbuf(stream, input.len);
 
@@ -281,9 +283,9 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
 static void server_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
 {
-    printf("server_stream_receive_reset stream-id=%li\n", stream->stream_id);
-    fprintf(stderr, "received RESET_STREAM: %li\n", err);
-    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
+    log_debug("server_stream_receive_reset stream-id=%li, received RESET_STREAM: %li\n",
+                                      stream->stream_id, err);
+    clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
 static const quicly_stream_callbacks_t server_stream_callbacks = {

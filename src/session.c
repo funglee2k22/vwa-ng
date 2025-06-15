@@ -69,15 +69,13 @@ void delete_session_from_hh(session_t **t2q, session_t **q2t, session_t *s)
 
 void detach_stream(quicly_stream_t *stream)
 {
-    return;
-#if 0
     log_debug("entering detach_stream\n");
     if (stream->callbacks)
         stream->callbacks = &quicly_stream_noop_callbacks;
     if (stream->data)
         stream->data = NULL;
     stream = NULL;
-#endif
+
 }
 
 
@@ -130,9 +128,6 @@ static void close_session(session_t *session)
         close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
         //detach_stream(stream);
     }
-
-    //assert(stream != NULL);
-
 
     //close tcp fd
     close(session->fd);
