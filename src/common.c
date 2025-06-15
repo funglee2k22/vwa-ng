@@ -91,6 +91,7 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
                 printf("quicly_send failed with code %i\n", quicly_res);
             } else {
                 log_warn("connection closed (closeable) quicly_res: %d \n", quicly_res);
+                print_trace();
             }
             return false;
         } else if(num_dgrams == 0) { //nothing to send

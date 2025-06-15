@@ -57,22 +57,25 @@ void client_timeout_cb(EV_P_ ev_timer *w, int revents)
 {
     send_heartbeat(conn);
     if(!send_pending(&client_ctx, client_quic_socket, conn)) {
-        log_warn("quicly conn is close-able, but keep it open\n");
+        //log_warn("quicly conn is close-able, but keep it open\n");
+        quit_client();
     }
 
     client_refresh_timeout();
 }
 
+#if 0
 void client_quic_write_cb(EV_P_ ev_io *w, int revents)
 {
     int fd = w->fd;
-
     if(!send_pending(&client_ctx, fd, conn)) {
         log_warn("quicly conn is close-able, but keep it open\n");
     }
 
     return;
 }
+#endif
+
 void client_quic_read_cb(EV_P_ ev_io *w, int revents)
 {
     // retrieve data
@@ -194,6 +197,9 @@ static inline int write_to_quic_stream_egress_buf(session_t *s)
     assert(sid > 0);
 
     quicly_stream_t *stream = quicly_get_stream(conn, sid);
+
+    if (!stream) 
+        return -1;
     assert(stream != NULL);
 
     char *buf = s->t2q_buf + s->t2q_write_offset;
@@ -235,6 +241,9 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         int ret = write_to_quic_stream_egress_buf(session);
         if (ret != 0) {
             log_warn("fd: %d failed to write into quic stream.\n", fd);
+            if (!session->stream) { 
+                clean_up_from_tcp(&ht_tcp_to_quic, fd);
+            }
             return;
         }
         base = session->t2q_buf + session->t2q_read_offset;
@@ -243,10 +252,9 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
             break;
     }
 
-
     if (read_bytes == 0) {
          // tcp connection has been closed.
-        log_info("fd: %d remote peer closed.\n", fd);
+        log_debug("fd: %d remote peer closed calling clean_up_from_tcp .\n", fd);
         clean_up_from_tcp(&ht_tcp_to_quic, fd);
         return;
     }
@@ -322,7 +330,7 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     char str1[1024], str2[1024]; ;
     snprintf(str1, sizeof(str1), "Accepted client %s:%d ", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port));
     snprintf(str2, sizeof(str2), " %s:%d on fd %d\n", inet_ntoa(da.sin_addr), ntohs(da.sin_port), fd);
-    log_info("%s -> %s\n", str1, str2);
+    log_debug("%s -> %s\n", str1, str2);
 
     //open quicly stream;
     quicly_stream_t *stream = NULL;

@@ -69,9 +69,15 @@ void delete_session_from_hh(session_t **t2q, session_t **q2t, session_t *s)
 
 void detach_stream(quicly_stream_t *stream)
 {
-    stream->callbacks = &quicly_stream_noop_callbacks;
-    stream->data = NULL;
+    return;
+#if 0
+    log_debug("entering detach_stream\n");
+    if (stream->callbacks)
+        stream->callbacks = &quicly_stream_noop_callbacks;
+    if (stream->data)
+        stream->data = NULL;
     stream = NULL;
+#endif
 }
 
 
@@ -82,8 +88,7 @@ void close_stream(quicly_stream_t *stream, quicly_error_t err)
 
     if (!quicly_recvstate_transfer_complete(&(stream->recvstate)))
         quicly_request_stop(stream, err);
-
-    //detach_stream(stream);
+    //session free session
 }
 
 static inline void release_resources(session_t *s)
@@ -119,9 +124,15 @@ static void close_session(session_t *session)
     release_resources(session);
 
     //closing quic stream
-    quicly_stream_t *stream = session->stream;
-    close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
-    detach_stream(stream);
+    quicly_stream_t *stream = quicly_get_stream(session->conn, session->stream_id);
+
+    if (stream) {
+        close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
+        //detach_stream(stream);
+    }
+
+    //assert(stream != NULL);
+
 
     //close tcp fd
     close(session->fd);
@@ -140,7 +151,10 @@ void clean_up_from_tcp(session_t **hh, int fd)
         return;
     }
 
-    log_debug("closing session for  tcp fd %d <-> quic stream %ld. \n", fd, session->stream->stream_id);
+    //log_info("closing session for  tcp fd %d <-> quic stream %ld. \n", fd, session->stream->stream_id);
+    if (!(session->stream))
+        log_info("closing session for  tcp fd %d <-> quic stream %ld stream has been closed. \n",
+                            fd, session->stream_id);
 
     close_session(session);
 

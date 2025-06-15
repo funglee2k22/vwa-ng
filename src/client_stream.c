@@ -66,13 +66,16 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     }
 
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+    if (input.len == 0)
+        return;
+
     assert(input.len > 0);
 
     size_t bytes_sent = -1;
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
-        quicly_streambuf_ingress_shift(stream, bytes_sent);
+        quicly_streambuf_ingress_safe_shift(stream, off, bytes_sent);
         if (input.len == 0)
              break;
     }
@@ -101,7 +104,7 @@ static void client_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
 {
     log_info("stream %ld, received RESET_STREAM: %li\n", stream->stream_id, err);
-    //FIXME do we need to terminate session here ?
+    clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
 static const quicly_stream_callbacks_t client_stream_callbacks = {
