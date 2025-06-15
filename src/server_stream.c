@@ -102,7 +102,8 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         s = create_session(stream, ctrl_frame);
         if (!s) {
             log_error("stream: %ld could not create session.\n", stream_id);
-            //close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
+            close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
+            detach_stream(stream);
             return;
         }
         s->ctrl_frame_received = true;
@@ -267,12 +268,10 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    quicly_stream_sync_recvbuf(stream, len);
-
-    /* remove used bytes from receive buffer */
-    quicly_streambuf_ingress_shift(stream, input.len);
-
     log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
+    /* remove used bytes from receive buffer */
+    quicly_stream_sync_recvbuf(stream, input.len);
+
     const char *msg = "Server received and reply PONG!\n";
     quicly_streambuf_egress_write(stream, msg, strlen(msg));
 
