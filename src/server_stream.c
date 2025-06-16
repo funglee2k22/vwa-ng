@@ -96,7 +96,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     if (!s) {
         frame_t *ctrl_frame = (frame_t *) (input.base);
         if (ctrl_frame->type != 1) {
-            //fprintf(stderr, "stream: %ld received %ld bytes unexpected data.\n", stream_id, len);
+            log_debug("stream: %ld received %ld bytes unexpected data.\n", stream_id, len);
             return;
         }
 
@@ -108,38 +108,47 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         if (!s) {
             log_error("stream: %ld could not create session.\n", stream_id);
             close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
-            //FIXME it should be a way to free(stream)
-            //detach_stream(stream);
             return;
         }
         s->ctrl_frame_received = true;
 
         size_t delta = sizeof(frame_t);
         input.base += delta;
-        input.len -= delta;
-
-        quicly_streambuf_ingress_safe_shift(stream, off, delta);
+        input.len -= delta; 
+        if (input.len > 0) 
+            quicly_streambuf_ingress_shift(stream, delta); 
+        else
+            quicly_stream_sync_recvbuf(stream, delta);
     }
 
     if (input.len == 0)
         return;
 
     assert(input.len > 0);
-    size_t bytes_sent = -1;
+
+    size_t bytes_sent = -1, total_bytes_sent = 0;
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
-        quicly_streambuf_ingress_safe_shift(stream, off, bytes_sent);
+        total_bytes_sent += bytes_sent;
         if (input.len == 0)
              break;
     }
 
-    if (bytes_sent < 0 && errno == EAGAIN) {
-        /* when stream ingress buf is not empty, and tcp sk is blocking
-           start TCP EV_WRITE watcher */
-        if (input.len > 0) {
-            ev_io_start(loop, s->tcp_write_watcher);
-        }
+    if (total_bytes_sent > 0) {
+        if(input.len > 0)
+            quicly_streambuf_ingress_shift(stream, total_bytes_sent);
+        else
+            quicly_stream_sync_recvbuf(stream, total_bytes_sent);
+    } else {
+        assert(total_bytes_sent != 0);
+        if (errno == EAGAIN) {
+            /* when stream ingress buf is not empty, and tcp sk is blocking
+              start TCP EV_WRITE watcher */
+            if (input.len > 0) 
+                ev_io_start(loop, s->tcp_write_watcher);
+         } else 
+             assert(errno != 0);
     }
 
     return;

@@ -71,20 +71,30 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     assert(input.len > 0);
 
-    size_t bytes_sent = -1;
+    size_t bytes_sent = -1, total_bytes_sent = 0;
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
-        quicly_streambuf_ingress_safe_shift(stream, off, bytes_sent);
+        total_bytes_sent += bytes_sent;
         if (input.len == 0)
              break;
     }
 
-    if (bytes_sent < 0 && errno == EAGAIN) {
-        /* when stream ingress buf is not empty, and tcp sk is blocking
-           start TCP EV_WRITE watcher */
-        if (input.len > 0) {
-            ev_io_start(loop, s->tcp_write_watcher);
+    if (total_bytes_sent > 0) {
+        if(input.len > 0)
+            quicly_streambuf_ingress_shift(stream, total_bytes_sent);
+        else
+            quicly_stream_sync_recvbuf(stream, total_bytes_sent);
+    } else {
+        assert(total_bytes_sent != 0);
+        if (errno == EAGAIN) {
+            /* when stream ingress buf is not empty, and tcp sk is blocking
+              start TCP EV_WRITE watcher */
+            if (input.len > 0) {
+                ev_io_start(loop, s->tcp_write_watcher);
+            }
+        } else {
+            assert(errno != 0);
         }
     }
 

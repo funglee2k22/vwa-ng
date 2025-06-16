@@ -67,18 +67,6 @@ void delete_session_from_hh(session_t **t2q, session_t **q2t, session_t *s)
     return;
 }
 
-void detach_stream(quicly_stream_t *stream)
-{
-    log_debug("entering detach_stream\n");
-    if (stream->callbacks)
-        stream->callbacks = &quicly_stream_noop_callbacks;
-    if (stream->data)
-        stream->data = NULL;
-    //stream = NULL;
-
-}
-
-
 void close_stream(quicly_stream_t *stream, quicly_error_t err)
 {
     if (!quicly_sendstate_transfer_complete(&(stream->sendstate)))
@@ -86,7 +74,10 @@ void close_stream(quicly_stream_t *stream, quicly_error_t err)
 
     if (!quicly_recvstate_transfer_complete(&(stream->recvstate)))
         quicly_request_stop(stream, err);
-    //session free session
+
+    if (stream->callbacks)
+        stream->callbacks = &quicly_stream_noop_callbacks;
+
 }
 
 static inline void release_resources(session_t *s)
@@ -126,8 +117,9 @@ static void close_session(session_t *session)
 
     if (stream && stream->stream_id != 0) {
         close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
-        //detach_stream(stream);
     }
+
+    session->stream = NULL;
 
     //close tcp fd
     close(session->fd);
@@ -164,7 +156,6 @@ void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_
     if (!session) {
         log_debug("could not find session infomation quic stream  %ld. \n", stream->stream_id);
         close_stream(stream, err);
-        //detach_stream(stream);
         return;
     }
 
