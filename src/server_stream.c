@@ -99,11 +99,17 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             //fprintf(stderr, "stream: %ld received %ld bytes unexpected data.\n", stream_id, len);
             return;
         }
+
+        if (ctrl_frame->s.dst.sin_port == 0) {
+            return;
+        }
+
         s = create_session(stream, ctrl_frame);
         if (!s) {
             log_error("stream: %ld could not create session.\n", stream_id);
             close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
-            detach_stream(stream);
+            //FIXME it should be a way to free(stream)
+            //detach_stream(stream);
             return;
         }
         s->ctrl_frame_received = true;
@@ -181,7 +187,6 @@ int srv_tcp_to_quic(int fd, char *buf, int len)
     }
 
     quicly_streambuf_egress_write(stream, buf, len);
-    //quicly_streambuf_egress_shutdown(stream);
 
     return 0;
 }
@@ -269,8 +274,11 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
 
-    log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
-
+    static int count;
+    count += 1;
+    if ((count % 150) == 1) {
+        log_info("ctrl stream %ld, recv: %.*s", stream->stream_id, (int) input.len, (char *) input.base);
+    }
     /* remove used bytes from receive buffer */
     quicly_stream_sync_recvbuf(stream, input.len);
 
