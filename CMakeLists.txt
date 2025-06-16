@@ -62,4 +62,25 @@ target_compile_options(quic-test PRIVATE
     -Werror=implicit-function-declaration
     -Werror=incompatible-pointer-types
     -Werror=shift-count-overflow
+) 
+
+add_executable(quic-test-write
+    poc-remove-app-buf-t2q/main.c
+    poc-remove-app-buf-t2q/client.h
+    poc-remove-app-buf-t2q/client.c
+    poc-remove-app-buf-t2q/client_stream.h
+    poc-remove-app-buf-t2q/client_stream.c
+    poc-remove-app-buf-t2q/server.h
+    poc-remove-app-buf-t2q/server.c
+    poc-remove-app-buf-t2q/server_stream.h
+    poc-remove-app-buf-t2q/server_stream.c
+    poc-remove-app-buf-t2q/common.h
+    poc-remove-app-buf-t2q/common.c)
+
+target_link_libraries(quic-test-write PRIVATE quicly ev picotls)
+target_compile_definitions(quic-test-write PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
+target_compile_options(quic-test-write PRIVATE
+    -Werror=implicit-function-declaration
+    -Werror=incompatible-pointer-types
+    -Werror=shift-count-overflow
 )
