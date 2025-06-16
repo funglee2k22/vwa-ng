@@ -162,9 +162,9 @@ void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_
     session_t *session = find_session_q2t(hh, stream->stream_id);
 
     if (!session) {
-        log_warn("could not find session infomation quic stream  %ld. \n", stream->stream_id);
+        log_debug("could not find session infomation quic stream  %ld. \n", stream->stream_id);
         close_stream(stream, err);
-        detach_stream(stream);
+        //detach_stream(stream);
         return;
     }
 
