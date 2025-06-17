@@ -114,9 +114,9 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
         size_t delta = sizeof(frame_t);
         input.base += delta;
-        input.len -= delta; 
-        if (input.len > 0) 
-            quicly_streambuf_ingress_shift(stream, delta); 
+        input.len -= delta;
+        if (input.len > 0)
+            quicly_streambuf_ingress_shift(stream, delta);
         else
             quicly_stream_sync_recvbuf(stream, delta);
     }
@@ -145,9 +145,9 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         if (errno == EAGAIN) {
             /* when stream ingress buf is not empty, and tcp sk is blocking
               start TCP EV_WRITE watcher */
-            if (input.len > 0) 
+            if (input.len > 0)
                 ev_io_start(loop, s->tcp_write_watcher);
-         } else 
+         } else
              assert(errno != 0);
     }
 
@@ -305,8 +305,14 @@ static void server_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
     clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
+static void server_stream_on_destroy(quicly_stream_t *stream, quicly_error_t err)
+{
+    quicly_streambuf_destroy(stream, err);
+    log_debug("stream_id: %ld is destroyed.\n", stream->stream_id);
+}
+
 static const quicly_stream_callbacks_t server_stream_callbacks = {
-    quicly_streambuf_destroy,
+    server_stream_on_destroy,
     quicly_streambuf_egress_shift,
     quicly_streambuf_egress_emit,
     server_stream_send_stop,
@@ -315,7 +321,7 @@ static const quicly_stream_callbacks_t server_stream_callbacks = {
 };
 
 static const quicly_stream_callbacks_t server_ctrl_stream_callbacks = {
-    quicly_streambuf_destroy,
+    server_stream_on_destroy,
     quicly_streambuf_egress_shift,
     quicly_streambuf_egress_emit,
     server_stream_send_stop,

@@ -117,8 +117,15 @@ static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
     clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
+static void client_stream_on_destroy(quicly_stream_t *stream, quicly_error_t err)
+{
+    quicly_streambuf_destroy(stream, err);
+    log_info("stream_id: %ld is destroyed.\n", stream->stream_id);
+}
+
+
 static const quicly_stream_callbacks_t client_stream_callbacks = {
-    &quicly_streambuf_destroy,
+    &client_stream_on_destroy,
     &quicly_streambuf_egress_shift,
     &quicly_streambuf_egress_emit,
     &client_stream_send_stop,
@@ -127,7 +134,7 @@ static const quicly_stream_callbacks_t client_stream_callbacks = {
 };
 
 static const quicly_stream_callbacks_t client_ctrl_stream_callbacks = {
-    &quicly_streambuf_destroy,
+    &client_stream_on_destroy,
     &quicly_streambuf_egress_shift,
     &quicly_streambuf_egress_emit,
     &client_stream_send_stop,
