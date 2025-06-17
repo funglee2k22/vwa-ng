@@ -32,8 +32,6 @@ struct ev_loop *loop = NULL;
 session_t *ht_quic_to_tcp = NULL;
 session_t *ht_tcp_to_quic = NULL;
 
-
-
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
 
@@ -79,7 +77,7 @@ void client_quic_write_cb(EV_P_ ev_io *w, int revents)
 void client_quic_read_cb(EV_P_ ev_io *w, int revents)
 {
     // retrieve data
-    uint8_t buf[4096];
+    uint8_t buf[SOCK_READ_BUF_SIZE];
     struct sockaddr_storage sa;
     socklen_t salen = sizeof(sa);
     quicly_decoded_packet_t packet;
@@ -190,36 +188,6 @@ static inline int clt_tcp_to_quic(int fd, void *buf, int len)
 
 }
 
-static inline int write_to_quic_stream_egress_buf(session_t *s)
-{
-    assert(s != NULL);
-    long int sid = s->stream_id;
-    assert(sid > 0);
-
-    quicly_stream_t *stream = quicly_get_stream(conn, sid);
-
-    if (!stream) 
-        return -1;
-    assert(stream != NULL);
-
-    char *buf = s->t2q_buf + s->t2q_write_offset;
-    size_t len = s->t2q_read_offset - s->t2q_write_offset;
-
-    assert(len > 0);
-
-    int ret = quicly_streambuf_egress_write(stream, buf, len);
-
-    if (ret != 0) {
-        fprintf(stderr, "quic stream %ld failed to write into egress buf %d.\n", sid, ret);
-        return -1;
-    }
-
-    s->t2q_write_offset = s->t2q_read_offset = 0;
-
-    return 0;
-}
-
-
 void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 {
     int fd = w->fd;
@@ -232,28 +200,19 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         return;
     }
 
-    char *base = session->t2q_buf + session->t2q_read_offset;
-    size_t available_len = session->buf_len - session->t2q_read_offset;
-    ssize_t read_bytes = 0;
+    quicly_stream_t *stream = quicly_get_stream(session->conn, session->stream_id);
+    assert(stream != NULL);
+    //TODO need a way to detect egress queue length, only call read
+    // if queue_length <= queue_capacity - read buffer size.
 
-    while ((read_bytes = read(fd, base, available_len)) > 0) {
-        session->t2q_read_offset += read_bytes;
-        int ret = write_to_quic_stream_egress_buf(session);
-        if (ret != 0) {
-            log_warn("fd: %d failed to write into quic stream.\n", fd);
-            if (!session->stream) { 
-                clean_up_from_tcp(&ht_tcp_to_quic, fd);
-            }
-            return;
-        }
-        base = session->t2q_buf + session->t2q_read_offset;
-        available_len = session->buf_len - session->t2q_read_offset;
-        if (available_len == 0)
-            break;
+    char buf[SOCK_READ_BUF_SIZE] = {0};
+    size_t bytes_write_to_quic = 0, read_bytes = 0;
+    while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
+        quicly_streambuf_egress_write(stream, buf, read_bytes);
+        bytes_write_to_quic += read_bytes;
     }
 
     if (read_bytes == 0) {
-         // tcp connection has been closed.
         log_debug("fd: %d remote peer closed calling clean_up_from_tcp .\n", fd);
         clean_up_from_tcp(&ht_tcp_to_quic, fd);
         return;
@@ -261,7 +220,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     if(read_bytes < 0) {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
+            log_error("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             clean_up_from_tcp(&ht_tcp_to_quic, fd);
         } else {
             log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
@@ -283,10 +242,6 @@ session_t *client_create_session(int fd, quicly_stream_t *stream)
     session->conn = stream->conn;
     session->stream = stream;
     session->stream_active = true;
-
-    session->t2q_buf = malloc(APP_BUF_SIZE);
-    session->t2q_read_offset = session->t2q_write_offset = 0;
-    session->buf_len = APP_BUF_SIZE;
 
     return session;
 }

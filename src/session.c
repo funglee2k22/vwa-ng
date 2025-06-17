@@ -95,9 +95,6 @@ static inline void release_resources(session_t *s)
         free(s->tcp_write_watcher);
     }
 
-    if (s->t2q_buf)
-        free(s->t2q_buf);
-
     return;
 }
 

@@ -22,6 +22,14 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
     clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
+static void inline log_session_peer(quicly_stream_t *stream, int fd, struct sockaddr_in *sa, struct sockaddr_in *da)
+{ 
+     char temp[256] = {0};
+     log_debug("session quic: %ld <-> tcp: %d  (%s) created.\n",
+               stream->stream_id, fd, get_conn_str(sa, da, temp, sizeof(temp)));
+     return;
+}
+
 session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
 {
     long int stream_id = stream->stream_id;
@@ -48,16 +56,7 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     set_non_blocking(fd);
     ns->fd = fd;
 
-    {
-        char temp[256] = {0};
-        log_debug("session quic: %ld <-> tcp: %d  (%s) created.\n",
-                stream->stream_id, fd, get_conn_str(sa, da, temp, sizeof(temp)));
-    }
-
-    ns->t2q_buf = malloc(APP_BUF_SIZE);
-    assert(ns->t2q_buf != NULL);
-    ns->buf_len = APP_BUF_SIZE;
-    ns->t2q_read_offset = ns->t2q_write_offset = 0;
+    log_session_peer(stream, fd, sa, da);
 
     //add session into hashtables
     add_to_hash_t2q(&ht_tcp_to_quic, ns);
@@ -200,76 +199,47 @@ int srv_tcp_to_quic(int fd, char *buf, int len)
     return 0;
 }
 
-static inline int write_to_quic_stream_egress_buf(session_t *s)
-{
-    assert(s != NULL);
-    long int sid = s->stream_id;
-    assert(sid > 0);
-
-    quicly_stream_t *stream = quicly_get_stream(s->conn, sid);
-    assert(stream != NULL);
-
-    char *buf = s->t2q_buf + s->t2q_write_offset;
-    size_t len = s->t2q_read_offset - s->t2q_write_offset;
-
-    assert(len > 0);
-
-    int ret = quicly_streambuf_egress_write(stream, buf, len);
-
-    if (ret != 0) {
-        fprintf(stderr, "quic stream %ld failed to write into egress buf %d.\n", sid, ret);
-        return -1;
-    }
-
-    s->t2q_write_offset = s->t2q_read_offset = 0;
-
-    return 0;
-}
-
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
 {
     int fd = w->fd;
     session_t *session = find_session_t2q(&ht_tcp_to_quic, fd);
 
     if (!session) {
-        fprintf(stderr, "could not find session for tcp %d. \n", fd);
+        log_warn("could not find session for tcp %d. \n", fd);
         ev_io_stop(loop, w);
         free(w);
         close(fd);
         return;
     }
 
-    char *base = session->t2q_buf + session->t2q_read_offset;
-    size_t available_len = session->buf_len - session->t2q_read_offset;
-    ssize_t read_bytes = 0;
+    quicly_stream_t *stream = quicly_get_stream(session->conn, session->stream_id);
+    assert(stream != NULL);
 
-    while ((read_bytes = read(fd, base, available_len)) > 0) {
-        session->t2q_read_offset += read_bytes;
-        int ret = write_to_quic_stream_egress_buf(session);
-        if (ret != 0) {
-            printf("fd: %d failed to write into quic stream.\n", fd);
-            return;
-        }
-        base = session->t2q_buf + session->t2q_read_offset;
-        available_len = session->buf_len - session->t2q_read_offset;
+    //TODO need a way to detect egress queue length, only call read
+    // if queue_length <= queue_capacity - read buffer size.
+    char buf[SOCK_READ_BUF_SIZE] = {0};
+    size_t bytes_write_to_quic = 0, read_bytes = 0;
+    while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
+        quicly_streambuf_egress_write(stream, buf, read_bytes);
+        bytes_write_to_quic += read_bytes;
     }
 
     if (read_bytes == 0) {
-         // tcp connection has been closed.
-        log_debug("fd: %d remote peer closed.\n", fd);
-    } else {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            //Nothing to read.
-            //printf("fd: %d noththing to read errno: %d, %s.\n", fd, errno, strerror(errno));
-            return;
+        log_debug("fd: %d remote peer closed calling clean_up_from_tcp .\n", fd);
+        clean_up_from_tcp(&ht_tcp_to_quic, fd);
+        return;
+    }
+
+    if(read_bytes < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            log_error("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
+            clean_up_from_tcp(&ht_tcp_to_quic, fd);
         } else {
-            log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
+            log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }
     }
 
-    clean_up_from_tcp(&ht_tcp_to_quic, fd);
     return;
-
 }
 
 static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
