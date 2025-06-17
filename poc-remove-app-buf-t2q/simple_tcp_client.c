@@ -34,7 +34,7 @@ int main()
 	}
 
 	char buf[1024];
-    ssize_t target_size = 1024 * 4, total_sent_size = 0, sent_size = 0; 
+    ssize_t target_size = 1024 * 10, total_sent_size = 0, sent_size = 0; 
     int i = 0; 
     
     do { 

@@ -150,6 +150,26 @@ int create_tcp_listening_socket(const short port)
     return sd;
 }
 
+void quicly_streambuf_egress_dump_info(quicly_stream_t *stream)
+{
+    quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
+    quicly_sendbuf_t *egress = &sbuf->egress;
+
+    printf("stream: %ld, ", stream->stream_id);
+    printf("off_in_first_vec: %ld, ", egress->off_in_first_vec);
+    printf("bytes_written: %ld, ", egress->bytes_written);
+    printf("vecs.size: %ld, ", egress->vecs.size);
+    printf("vecs.capacity: %ld, ", egress->vecs.capacity);
+    printf("\n");
+    for (int i = 0; i < egress->vecs.size; i++) {
+         quicly_sendbuf_vec_t entry = egress->vecs.entries[i];
+         printf("vecs[%d], len: %ld, cbdata: %p.\n", i, entry.len, entry.cbdata);
+    }
+    printf("\n");
+    fflush(stdout);
+
+}
+
 
 #define BUFFER_SIZE 4096
 void tcp_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
@@ -165,13 +185,20 @@ void tcp_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
     ssize_t bytes_sent_to_quic = 0;
 
     //somehow get the egress queue length from quic stream.
-
+    int i = 0;
     while ((read_bytes = read(watcher->fd, buffer, BUFFER_SIZE)) > 0) {
         fprintf(stdout, "read %ld bytes from fd: %d.\n", read_bytes, watcher->fd);
-        quicly_streambuf_egress_write(stream, buffer, read_bytes);
-        bytes_sent_to_quic += read_bytes;
-    }
 
+        printf("iter: %d, before write ", i);
+        quicly_streambuf_egress_dump_info(stream);
+
+        quicly_streambuf_egress_write(stream, buffer, read_bytes);
+
+        printf("iter: %d, after write ", i);
+        quicly_streambuf_egress_dump_info(stream);
+        bytes_sent_to_quic += read_bytes;
+        i += 1;
+    }
 
     if (read_bytes == 0) {
         ev_io_stop(loop,watcher);
@@ -180,11 +207,7 @@ void tcp_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
         return;
     }
 
-    if (errno == EAGAIN) { //read_bytes < 0;
-         //feed read event to retry
-         fprintf(stdout, "EAGAIN, and feed event to re-read from socket %d.\n", errno);
-         ev_feed_event(loop, watcher, EV_READ);
-    } else {
+    if (read_bytes < 0 && errno != EAGAIN) {
          ev_io_stop(loop,watcher);
          close(watcher->fd);
          free(watcher);
