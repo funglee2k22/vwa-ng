@@ -37,6 +37,7 @@ void client_refresh_timeout()
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents)
 {
+    printf("client_time_out_cb()\n");
     if(!send_pending(&client_ctx, client_socket, conn)) {
         quicly_free(conn);
         exit(0);
@@ -95,7 +96,7 @@ void enqueue_request(quicly_conn_t *conn)
     int ret = quicly_open_stream(conn, &stream, 0);
     assert(ret == 0);
     const char *req = "qperf start sending";
-    
+
     quicly_streambuf_egress_write(stream, req, strlen(req));
     //quicly_streambuf_egress_shutdown(stream);
 }
@@ -120,16 +121,16 @@ static quicly_stream_open_t stream_open = {&client_on_stream_open};
 
 static quicly_closed_by_remote_t closed_by_remote = {&client_on_conn_close};
 
-int create_tcp_listening_socket(const short port) 
-{ 
+int create_tcp_listening_socket(const short port)
+{
     int sd;
-    struct sockaddr_in addr; 
-    
+    struct sockaddr_in addr;
+
     if ((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0 ) {
         perror("socket error");
         return -1;
     }
-    
+
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
@@ -139,7 +140,7 @@ int create_tcp_listening_socket(const short port)
     if (bind(sd, (struct sockaddr*) &addr, sizeof(addr)) != 0) {
         perror("bind error");
     }
-    
+
     // Start listing on the socket
     if (listen(sd, 2) < 0) {
         perror("listen error");
@@ -158,37 +159,39 @@ void tcp_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
     char buffer[BUFFER_SIZE];
     ssize_t read_bytes;
 
-    quicly_stream_t *stream = quicly_get_stream(conn, 0); 
+    quicly_stream_t *stream = quicly_get_stream(conn, 0);
 
-    assert(stream != NULL);  
-    // Receive message from client socket 
+    assert(stream != NULL);
+    // Receive message from client socket
     ssize_t bytes_sent_to_quic = 0;
 
-    //somehow get the egress queue length from quic stream. 
+    //somehow get the egress queue length from quic stream.
 
-    while ((read_bytes = recv(watcher->fd, buffer, BUFFER_SIZE, 0)) > 0) { 
-        quicly_streambuf_egress_write(stream, buffer, read_bytes); 
-        bytes_sent_to_quic += read_bytes; 
+    while ((read_bytes = read(watcher->fd, buffer, BUFFER_SIZE)) > 0) {
+        fprintf(stdout, "read %ld bytes from fd: %d.\n", read_bytes, watcher->fd);
+        quicly_streambuf_egress_write(stream, buffer, read_bytes);
+        bytes_sent_to_quic += read_bytes;
     }
+
 
     if (read_bytes == 0) {
         ev_io_stop(loop,watcher);
         close(watcher->fd);
-        free(watcher); 
+        free(watcher);
         return;
-    } else {
-         if (errno == EAGAIN) {
-             //feed read event to retry 
-             fprintf(stdout, "EAGAIN, and feed event to re-read from socket %d.\n", errno);
-             ev_feed_event(loop, watcher, EV_READ);
-         } else {
-             ev_io_stop(loop,watcher);
-             close(watcher->fd);
-             free(watcher); 
-             return;
-         }
     }
-    
+
+    if (errno == EAGAIN) { //read_bytes < 0;
+         //feed read event to retry
+         fprintf(stdout, "EAGAIN, and feed event to re-read from socket %d.\n", errno);
+         ev_feed_event(loop, watcher, EV_READ);
+    } else {
+         ev_io_stop(loop,watcher);
+         close(watcher->fd);
+         free(watcher);
+         return;
+    }
+
     return;
 
 }
@@ -199,7 +202,7 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(client_addr);
     int client_sd;
-    
+
 
     // Accept client request
     client_sd = accept(watcher->fd, (struct sockaddr *)&client_addr, &client_len);
@@ -249,15 +252,15 @@ int run_client(const char *port, bool gso, const char *logfile, const char *cc, 
     if (resolve_address((void *)&sas, &salen, host, port, AF_UNSPEC, SOCK_DGRAM, IPPROTO_UDP) != 0) {
         exit(-1);
     }
-    
+
     struct sockaddr *sa = (struct sockaddr *)&sas;
-    
+
     client_socket = socket(sa->sa_family, SOCK_DGRAM, IPPROTO_UDP);
     if (client_socket == -1) {
         perror("socket(2) failed");
         return 1;
     }
-    
+
     if (sa->sa_family == AF_INET) {
         struct sockaddr_in local;
         memset(&local, 0, sizeof(local));
@@ -318,10 +321,10 @@ int run_client(const char *port, bool gso, const char *logfile, const char *cc, 
 
     client_set_quit_after(runtime_s);
 
-    int tcp_fd = create_tcp_listening_socket(5203); 
-    ev_io tcp_accept_watcher;  
+    int tcp_fd = create_tcp_listening_socket(5203);
+    ev_io tcp_accept_watcher;
     ev_io_init(&tcp_accept_watcher, accept_cb, tcp_fd, EV_READ);
-    ev_io_start(loop, &tcp_accept_watcher);    
+    ev_io_start(loop, &tcp_accept_watcher);
 
     ev_run(loop, 0);
     return 0;

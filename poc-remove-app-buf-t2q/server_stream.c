@@ -15,8 +15,8 @@ typedef struct
     uint64_t report_num_packets_lost;
     uint64_t total_num_packets_sent;
     uint64_t total_num_packets_lost;
-    ev_timer report_timer; 
-    char *buf; 
+    ev_timer report_timer;
+    char *buf;
 } server_stream;
 
 static int report_counter = 0;
@@ -49,20 +49,20 @@ static void server_stream_destroy(quicly_stream_t *stream, quicly_error_t err)
 }
 
 static void server_stream_send_shift(quicly_stream_t *stream, size_t delta)
-{ 
+{
     printf("func: %s, line: %d ,", __func__, __LINE__);
-    printf("stream: %ld, delta: %ld\n", stream->stream_id, delta); 
+    printf("stream: %ld, delta: %ld\n", stream->stream_id, delta);
     server_stream *s = stream->data;
     s->acked_offset += delta;
 }
 
 static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *dst, size_t *len, int *wrote_all)
-{ 
+{
     printf("func: %s, line: %d ,", __func__, __LINE__);
-    printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all)); 
+    printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all));
     server_stream *s = stream->data;
-    uint64_t data_off = s->acked_offset + off; 
-    static int count; 
+    uint64_t data_off = s->acked_offset + off;
+    static int count;
 
     if(data_off + *len < s->target_offset) {
         *wrote_all = 0;
@@ -72,11 +72,11 @@ static void server_stream_send_emit(quicly_stream_t *stream, size_t off, void *d
         *len = s->target_offset - data_off;
         assert(data_off + *len == s->target_offset);
     }
-    count += 1; 
-    char c = '1' + count; 
+    count += 1;
+    char c = '1' + count;
     memset(dst, c, *len);
     printf("func: %s, line: %d ,", __func__, __LINE__);
-    printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all)); 
+    printf("stream: %ld, off: %ld, dst: %p, len: %ld, wrote_all: %d\n", stream->stream_id, off, dst, (*len), (*wrote_all));
 }
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
@@ -87,8 +87,14 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    //print_escaped((const char*)src, len);
-    quicly_stream_sync_recvbuf(stream, len);
+    if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
+        return;
+
+    /* obtain contiguous bytes from the receive buffer */
+    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+    printf("stream: %ld, received %ld bytes, first 10 bytes: %.*s.\n", stream->stream_id, input.len, 10, (char *) input.base);
+
+    quicly_stream_sync_recvbuf(stream, input.len);
 
     if(quicly_recvstate_transfer_complete(&stream->recvstate)) {
         printf("request received, sending data\n");
@@ -125,13 +131,13 @@ quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_stream_t
     s->total_num_packets_sent = 0;
     s->total_num_packets_lost = 0;
     ev_timer_init(&s->report_timer, server_report_cb, 1.0, 1.0);
-    s->report_timer.data = s; 
+    s->report_timer.data = s;
 
-    s->buf = malloc(4096); 
-    char *base = s->buf; 
-    for (int off = 0; off < 4096; off += 1024) { 
-        memset(base, (off / 1024)  + '0', 1024); 
-    } 
+    s->buf = malloc(4096);
+    char *base = s->buf;
+    for (int off = 0; off < 4096; off += 1024) {
+        memset(base, (off / 1024)  + '0', 1024);
+    }
     stream->data = s;
     stream->callbacks = &server_stream_callbacks;
 
