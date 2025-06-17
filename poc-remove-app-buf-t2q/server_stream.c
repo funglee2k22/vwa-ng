@@ -105,8 +105,8 @@ static void server_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
 
 static const quicly_stream_callbacks_t server_stream_callbacks = {
     &server_stream_destroy,
-    &server_stream_send_shift,
-    &server_stream_send_emit,
+    &quicly_streambuf_egress_shift,
+    &quicly_streambuf_egress_emit,
     &server_stream_send_stop,
     &server_stream_receive,
     &server_stream_receive_reset

@@ -84,3 +84,4 @@ target_compile_options(quic-test-write PRIVATE
     -Werror=incompatible-pointer-types
     -Werror=shift-count-overflow
 )
+add_executable(tcp-simple-client poc-remove-app-buf-t2q/simple_tcp_client.c)

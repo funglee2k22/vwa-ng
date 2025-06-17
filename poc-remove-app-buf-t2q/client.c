@@ -95,10 +95,9 @@ void enqueue_request(quicly_conn_t *conn)
     int ret = quicly_open_stream(conn, &stream, 0);
     assert(ret == 0);
     const char *req = "qperf start sending";
-
     
     quicly_streambuf_egress_write(stream, req, strlen(req));
-    quicly_streambuf_egress_shutdown(stream);
+    //quicly_streambuf_egress_shutdown(stream);
 }
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
@@ -120,6 +119,104 @@ static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t 
 static quicly_stream_open_t stream_open = {&client_on_stream_open};
 
 static quicly_closed_by_remote_t closed_by_remote = {&client_on_conn_close};
+
+int create_tcp_listening_socket(const short port) 
+{ 
+    int sd;
+    struct sockaddr_in addr; 
+    
+    if ((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0 ) {
+        perror("socket error");
+        return -1;
+    }
+    
+    bzero(&addr, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    // Bind socket to address
+    if (bind(sd, (struct sockaddr*) &addr, sizeof(addr)) != 0) {
+        perror("bind error");
+    }
+    
+    // Start listing on the socket
+    if (listen(sd, 2) < 0) {
+        perror("listen error");
+        return -1;
+    }
+
+    fprintf(stdout, "created a TCP server sk %d listening on port %d\n", sd, port);
+    return sd;
+}
+
+
+#define BUFFER_SIZE 4096
+void tcp_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
+{
+
+    char buffer[BUFFER_SIZE];
+    ssize_t read_bytes;
+
+    quicly_stream_t *stream = quicly_get_stream(conn, 0); 
+
+    assert(stream != NULL);  
+    // Receive message from client socket 
+    ssize_t bytes_sent_to_quic = 0;
+
+    //somehow get the egress queue length from quic stream. 
+
+    while ((read_bytes = recv(watcher->fd, buffer, BUFFER_SIZE, 0)) > 0) { 
+        quicly_streambuf_egress_write(stream, buffer, read_bytes); 
+        bytes_sent_to_quic += read_bytes; 
+    }
+
+    if (read_bytes == 0) {
+        ev_io_stop(loop,watcher);
+        close(watcher->fd);
+        free(watcher); 
+        return;
+    } else {
+         if (errno == EAGAIN) {
+             //feed read event to retry 
+             fprintf(stdout, "EAGAIN, and feed event to re-read from socket %d.\n", errno);
+             ev_feed_event(loop, watcher, EV_READ);
+         } else {
+             ev_io_stop(loop,watcher);
+             close(watcher->fd);
+             free(watcher); 
+             return;
+         }
+    }
+    
+    return;
+
+}
+
+
+void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
+{
+    struct sockaddr_in client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    int client_sd;
+    
+
+    // Accept client request
+    client_sd = accept(watcher->fd, (struct sockaddr *)&client_addr, &client_len);
+    if (client_sd < 0) {
+        perror("accept error");
+        return;
+    }
+
+    struct ev_io *w_client = (struct ev_io*) malloc (sizeof(struct ev_io));
+    ev_io_init(w_client, tcp_read_cb, client_sd, EV_READ);
+    ev_io_start(loop, w_client);
+
+    fprintf(stdout, "accepted a new client %d and start tcp_read_cb.\n", client_sd);
+
+    return;
+}
+
 
 int run_client(const char *port, bool gso, const char *logfile, const char *cc, int iw, const char *host, int runtime_s, bool ttfb_only)
 {
@@ -220,6 +317,11 @@ int run_client(const char *port, bool gso, const char *logfile, const char *cc, 
     client_refresh_timeout();
 
     client_set_quit_after(runtime_s);
+
+    int tcp_fd = create_tcp_listening_socket(5203); 
+    ev_io tcp_accept_watcher;  
+    ev_io_init(&tcp_accept_watcher, accept_cb, tcp_fd, EV_READ);
+    ev_io_start(loop, &tcp_accept_watcher);    
 
     ev_run(loop, 0);
     return 0;
