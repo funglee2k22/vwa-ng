@@ -37,7 +37,6 @@ void client_refresh_timeout()
 
 void client_timeout_cb(EV_P_ ev_timer *w, int revents)
 {
-    printf("client_time_out_cb()\n");
     if(!send_pending(&client_ctx, client_socket, conn)) {
         quicly_free(conn);
         exit(0);

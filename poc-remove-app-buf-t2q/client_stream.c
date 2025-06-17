@@ -35,7 +35,7 @@ static void report_cb(EV_P_ ev_timer *w, int revents)
     bytes_received = 0;
 
     if(current_second >= runtime_s) {
-        quit_client();
+        //quit_client();
     }
 }
 
@@ -81,7 +81,6 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     //assume consume first 100 bytes.
     printf("first 10 bytes of input.base: %.*s\n", 10, input.base);
     printf("first 10 bytes of src: %.*s.\n", 10, (char *) src);
-
 
     static int i;
     i += 1;

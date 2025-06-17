@@ -36,13 +36,17 @@ int main()
 	char buf[1024];
     ssize_t target_size = 1024 * 4, total_sent_size = 0, sent_size = 0; 
     int i = 0; 
-    memset(buf, 'a' + i, sizeof(buf)); 
- 
-    while ((sent_size = write(sockfd, buf, sizeof(buf))) > 0 && (total_sent_size < target_size) ) { 
-         total_sent_size += sent_size; 
-         i += 1; 
+    
+    do { 
          memset(buf, 'a' + i, sizeof(buf)); 
-    } 
+         sent_size = write(sockfd, buf, sizeof(buf)); 
+         if (sent_size <= 0) 
+              break;    
+         total_sent_size += sent_size; 
+         printf("sent#%d, \"%.*s\" \n", i, (int) sent_size, buf);
+         i += 1; 
+    } while (total_sent_size < target_size); 
+         
     printf("total sent %ld bytes\n", total_sent_size);
 	
 	close(sockfd);
