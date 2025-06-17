@@ -41,11 +41,7 @@ static void server_report_cb(EV_P, ev_timer *w, int revents)
 
 static void server_stream_destroy(quicly_stream_t *stream, quicly_error_t err)
 {
-    server_stream *s = (server_stream*)stream->data;
-    print_report(s);
-    printf("connection %i total packets sent: %"PRIu64" total packets lost: %"PRIu64"\n", s->report_id, s->total_num_packets_sent, s->total_num_packets_lost);
-    ev_timer_stop(EV_DEFAULT, &s->report_timer);
-    free(s);
+    printf("stream %ld is destroyed.\n", stream->stream_id);
 }
 
 static void server_stream_send_shift(quicly_stream_t *stream, size_t delta)
@@ -87,12 +83,15 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
+    if (len == 0)
+        return;
+
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
 
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    printf("stream: %ld, received %ld bytes, first 10 bytes: %.*s.\n", stream->stream_id, input.len, 10, (char *) input.base);
+    printf("stream: %ld, received %ld bytes: \n \"%.*s\"\n", stream->stream_id, input.len, (int ) input.len, (char *) input.base);
 
     quicly_stream_sync_recvbuf(stream, input.len);
 
@@ -133,12 +132,9 @@ quicly_error_t server_on_stream_open(quicly_stream_open_t *self, quicly_stream_t
     ev_timer_init(&s->report_timer, server_report_cb, 1.0, 1.0);
     s->report_timer.data = s;
 
-    s->buf = malloc(4096);
-    char *base = s->buf;
-    for (int off = 0; off < 4096; off += 1024) {
-        memset(base, (off / 1024)  + '0', 1024);
-    }
-    stream->data = s;
+    int ret = quicly_streambuf_create(stream, sizeof(quicly_streambuf_t));
+    assert(ret == 0);
+
     stream->callbacks = &server_stream_callbacks;
 
     return 0;
