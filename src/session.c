@@ -75,8 +75,8 @@ void close_stream(quicly_stream_t *stream, quicly_error_t err)
     if (!quicly_recvstate_transfer_complete(&(stream->recvstate)))
         quicly_request_stop(stream, err);
 
-    if (stream->callbacks)
-        stream->callbacks = &quicly_stream_noop_callbacks;
+    //if (stream->callbacks)
+    //    stream->callbacks = &quicly_stream_noop_callbacks;
 
 }
 
