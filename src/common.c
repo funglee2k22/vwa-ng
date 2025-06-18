@@ -137,8 +137,8 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     char buf[1024];
     va_list args;
 
-    if (priority > LOG_INFO)
-	    return;
+    //if (priority > LOG_INFO)
+	//    return;
 
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);

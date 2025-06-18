@@ -69,18 +69,24 @@ void delete_session_from_hh(session_t **t2q, session_t **q2t, session_t *s)
 
 void close_stream(quicly_stream_t *stream, quicly_error_t err)
 {
-    if (!quicly_sendstate_transfer_complete(&(stream->sendstate)))
+
+    if (!quicly_sendstate_transfer_complete(&(stream->sendstate))) { 
+        log_error("reset stream %ld\n", stream->stream_id);
         quicly_reset_stream(stream, err);
+    } else
+        log_error("could not reset stream %ld\n", stream->stream_id);
 
-    if (!quicly_recvstate_transfer_complete(&(stream->recvstate)))
+    if (!quicly_recvstate_transfer_complete(&(stream->recvstate))) { 
+        log_error("request stop  %ld\n", stream->stream_id);
         quicly_request_stop(stream, err);
-
+    } else
+        log_error("could not request STOP stream %ld\n", stream->stream_id);
     //if (stream->callbacks)
-    //    stream->callbacks = &quicly_stream_noop_callbacks;
+        //stream->callbacks = &quicly_stream_noop_callbacks;
 
 }
 
-static inline void release_resources(session_t *s)
+void release_resources(session_t *s)
 {
     if (!s)
         return;
@@ -98,7 +104,7 @@ static inline void release_resources(session_t *s)
     return;
 }
 
-static void close_session(session_t *session)
+void close_session(session_t *session)
 {
     extern session_t *ht_tcp_to_quic, *ht_quic_to_tcp;
 
@@ -113,11 +119,11 @@ static void close_session(session_t *session)
     quicly_stream_t *stream = quicly_get_stream(session->conn, session->stream_id);
 
     if (stream && stream->stream_id != 0) {
+        log_info("closing stream %ld and fd %d\n", stream->stream_id, session->fd); 
         close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
     }
 
     //session->stream = NULL;
-
     //close tcp fd
     close(session->fd);
 
@@ -135,7 +141,7 @@ void clean_up_from_tcp(session_t **hh, int fd)
         return;
     }
 
-    //log_info("closing session for  tcp fd %d <-> quic stream %ld. \n", fd, session->stream->stream_id);
+    log_info("closing session for  tcp fd %d <-> quic stream %ld. \n", fd, session->stream->stream_id);
     if (!(session->stream))
         log_debug("closing session for  tcp fd %d <-> quic stream %ld stream has been closed. \n",
                             fd, session->stream_id);

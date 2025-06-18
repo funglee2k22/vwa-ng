@@ -134,15 +134,12 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
 #if 0
     if (total_bytes_sent > 0) {
-        //quicly_stream_sync_recvbuf(stream, total_bytes_sent);
-
         if(input.len > 0)
             quicly_streambuf_ingress_shift(stream, total_bytes_sent);
         else
             quicly_stream_sync_recvbuf(stream, total_bytes_sent);
     }
 #endif
-    
 
     if (bytes_sent < 0) {
         if (errno == EAGAIN) {
@@ -151,7 +148,8 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             if (input.len > 0)
                 ev_io_start(loop, s->tcp_write_watcher);
         } else {
-            clean_up_from_tcp(&ht_tcp_to_quic, s->fd);
+            log_error("fd %d write failed with errno %d,  %s \n", s->fd, errno, strerror(errno));
+            clean_up_from_stream(&ht_quic_to_tcp, stream, 0);
         }
     }
 
@@ -236,11 +234,11 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     }
 
     if(read_bytes < 0) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            log_error("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
+        if (errno != EAGAIN) {
+            log_debug("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             clean_up_from_tcp(&ht_tcp_to_quic, fd);
         } else {
-            log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
+            //log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }
     }
 
@@ -277,7 +275,7 @@ static void server_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
 {
     log_debug("server_stream_receive_reset stream-id=%li, received RESET_STREAM: %li\n",
                                       stream->stream_id, err);
-    clean_up_from_stream(&ht_quic_to_tcp, stream, err);
+    //clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
 static void server_stream_on_destroy(quicly_stream_t *stream, quicly_error_t err)
