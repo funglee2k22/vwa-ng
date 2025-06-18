@@ -137,8 +137,8 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     char buf[1024];
     va_list args;
 
-    //if (priority > LOG_INFO)
-	//    return;
+    if (priority > LOG_INFO)
+	    return;
 
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
@@ -182,7 +182,7 @@ void tcp_write_cb(EV_P_ ev_io *w, int revents)
         return;
     }
     size_t off = ((quicly_streambuf_t *) (stream->data))->ingress.off;
-    size_t bytes_sent = -1;
+    ssize_t bytes_sent = -1;
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
@@ -193,7 +193,7 @@ void tcp_write_cb(EV_P_ ev_io *w, int revents)
 
     if (bytes_sent == -1) {
        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            log_info("tcp %d write is blocked with error %d, %s\n",
+            log_debug("tcp %d write is blocked with error %d, %s\n",
                                                      fd, errno, strerror(errno));
         } else {
             // if error happens other than EAGAIN. it is a failure, terminate the session.

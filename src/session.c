@@ -116,7 +116,7 @@ static void close_session(session_t *session)
         close_stream(stream, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
     }
 
-    session->stream = NULL;
+    //session->stream = NULL;
 
     //close tcp fd
     close(session->fd);

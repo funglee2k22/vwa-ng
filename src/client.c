@@ -225,7 +225,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
             log_error("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             clean_up_from_tcp(&ht_tcp_to_quic, fd);
         } else {
-            log_info("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
+            log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }
     }
 
