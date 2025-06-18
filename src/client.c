@@ -432,6 +432,7 @@ void sigpipe_handler(int signo)
 {
     if (signo == SIGPIPE) {
         fprintf(stderr, "SIGPIPE(%d) received. errno: %d, \"%s\"\n", signo, errno, strerror(errno));
+        exit(-1);
         return;
     }
     return;

@@ -122,7 +122,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     assert(input.len > 0);
 
-    size_t bytes_sent = -1, total_bytes_sent = 0;
+    ssize_t bytes_sent = -1, total_bytes_sent = 0;
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
