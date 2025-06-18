@@ -114,10 +114,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
         size_t delta = sizeof(frame_t);
         input.base += delta;
         input.len -= delta;
-        if (input.len > 0)
-            quicly_streambuf_ingress_shift(stream, delta);
-        else
-            quicly_stream_sync_recvbuf(stream, delta);
+        quicly_stream_sync_recvbuf(stream, delta);
     }
 
     if (input.len == 0)
@@ -135,12 +132,16 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     }
 
     if (total_bytes_sent > 0) {
+        quicly_stream_sync_recvbuf(stream, total_bytes_sent);
+#if 0
         if(input.len > 0)
             quicly_streambuf_ingress_shift(stream, total_bytes_sent);
         else
             quicly_stream_sync_recvbuf(stream, total_bytes_sent);
-    } else {
-        assert(total_bytes_sent != 0);
+#endif
+    }
+
+    if (bytes_sent < 0) {
         if (errno == EAGAIN) {
             /* when stream ingress buf is not empty, and tcp sk is blocking
               start TCP EV_WRITE watcher */
