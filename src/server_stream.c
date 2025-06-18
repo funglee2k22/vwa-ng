@@ -23,7 +23,7 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 }
 
 static void inline log_session_peer(quicly_stream_t *stream, int fd, struct sockaddr_in *sa, struct sockaddr_in *da)
-{ 
+{
      char temp[256] = {0};
      log_debug("session quic: %ld <-> tcp: %d  (%s) created.\n",
                stream->stream_id, fd, get_conn_str(sa, da, temp, sizeof(temp)));
@@ -147,8 +147,9 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
               start TCP EV_WRITE watcher */
             if (input.len > 0)
                 ev_io_start(loop, s->tcp_write_watcher);
-         } else
+        } else {
              assert(errno != 0);
+        }
     }
 
     return;
@@ -213,14 +214,14 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
         return;
     }
 
-    quicly_stream_t *stream = quicly_get_stream(session->conn, session->stream_id);
+    quicly_stream_t *stream = session->stream;
     assert(stream != NULL);
 
     //TODO need a way to detect egress queue length, only call read
     // if queue_length <= queue_capacity - read buffer size.
-    char buf[SOCK_READ_BUF_SIZE] = {0};
-    size_t bytes_write_to_quic = 0, read_bytes = 0;
-    while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
+    char buf[SOCK_READ_BUF_SIZE];
+    ssize_t bytes_write_to_quic = 0, read_bytes = 0;
+    while ((read_bytes = read(fd, buf, SOCK_READ_BUF_SIZE)) > 0) {
         quicly_streambuf_egress_write(stream, buf, read_bytes);
         bytes_write_to_quic += read_bytes;
     }

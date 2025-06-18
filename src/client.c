@@ -200,14 +200,16 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         return;
     }
 
-    quicly_stream_t *stream = quicly_get_stream(session->conn, session->stream_id);
+    quicly_stream_t *stream = session->stream;
+
     assert(stream != NULL);
     //TODO need a way to detect egress queue length, only call read
     // if queue_length <= queue_capacity - read buffer size.
 
-    char buf[SOCK_READ_BUF_SIZE] = {0};
-    size_t bytes_write_to_quic = 0, read_bytes = 0;
-    while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
+    char buf[SOCK_READ_BUF_SIZE];
+    ssize_t bytes_write_to_quic = 0, read_bytes = 0;
+
+    while ((read_bytes = read(fd, buf, SOCK_READ_BUF_SIZE)) > 0) {
         quicly_streambuf_egress_write(stream, buf, read_bytes);
         bytes_write_to_quic += read_bytes;
     }
@@ -223,7 +225,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
             log_error("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             clean_up_from_tcp(&ht_tcp_to_quic, fd);
         } else {
-            log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
+            log_info("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }
     }
 
