@@ -49,6 +49,8 @@ static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
     clean_up_from_stream(&ht_quic_to_tcp, stream, err);
 }
 
+
+
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
     if (len == 0)
@@ -58,34 +60,61 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
         return;
 
     long int stream_id = stream->stream_id;
-    session_t *session = find_session_q2t(&ht_quic_to_tcp, stream_id);
-
-    if (!session) {
-        //fprintf(stderr, "stream: %ld remote tcp conn.  might be closed. \n", stream_id);
+    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream_id);
+    if (!s || !s->tcp_active) {
+        log_error("stream %ld received %ld bytes, but remote tcp conn. might be closed.\n", stream_id, len);
+        quicly_stream_sync_recvbuf(stream, len);
         return;
     }
 
-    assert(session != NULL);
-
-    //copy stream content into the APP write buffer.
-    char *base =session->q2t_buf + session->q2t_read_offset;
-    size_t actual_read_len = session->buf_len - session->q2t_read_offset;
-    if (len > actual_read_len) {
-        memcpy(base, src, actual_read_len);
-        session->q2t_read_offset += actual_read_len;
-    } else {
-        memcpy(base, src, len);
-        session->q2t_read_offset += len;
-        actual_read_len = len;
+    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+    if (input.len == 0) {
+        //log_warn("stream %ld quicly_streambuf_ingress_get return input.len: %ld bytes.\n",
+        //                stream->stream_id, input.len);
+        return;
     }
 
+    log_debug("stream: %ld recv buff has %ld bytes available.\n", stream->stream_id, input.len);
 
-#ifdef USE_EV_EVENT_FEED
-    ev_feed_event(loop, session->tcp_write_watcher, EV_WRITE);
-#endif
+    ssize_t bytes_sent = -1, total_bytes_sent = 0;
+    log_debug("stream %ld, off: %ld, len: %ld, total_bytes_sent: %ld, input.len: %ld\n",
+                     stream->stream_id, off, len, total_bytes_sent, input.len);
 
-    quicly_stream_sync_recvbuf(stream, actual_read_len);
+    while ((bytes_sent = write(s->fd, input.base, input.len)) > 0 ) {
+        input.base += bytes_sent;
+        input.len -= bytes_sent;
+        total_bytes_sent += bytes_sent;
+        if (input.len == 0)
+            break;
+    }
 
+    log_debug("stream %ld, off: %ld, len: %ld, total_bytes_sent: %ld, input.len: %ld\n",
+                     stream->stream_id, off, len, total_bytes_sent, input.len);
+
+    //assert(total_bytes_sent <= (off + len));
+
+    if (total_bytes_sent > 0) {
+         if (input.len > 0)
+             quicly_streambuf_ingress_shift(stream, total_bytes_sent);
+         else
+             quicly_stream_sync_recvbuf(stream, total_bytes_sent);
+    }
+
+    if (bytes_sent < 0) {
+         if (errno == EAGAIN) {
+             if (input.len > 0) {
+                 if (ev_is_active(s->tcp_write_watcher) != true) {
+                     ev_io_start(loop, s->tcp_write_watcher);
+                     log_info("stream %ld has %ld bytes in recv buf left, and start ev_writer\n",
+                                 stream->stream_id, (ssize_t) input.len);
+                 }
+             }
+         } else {
+             log_error("fd %d write failed w/ %d, \"%s\". \n", s->fd, errno, strerror(errno));
+             s->tcp_active = false;
+             close(s->fd);
+         }
+    }
     return;
 }
 

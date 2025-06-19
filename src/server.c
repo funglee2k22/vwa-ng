@@ -239,6 +239,8 @@ int main(int argc, char** argv)
 
     udp_server_socket = srv_setup_quic_listener(address, port_char, keyfile, certfile);
 
+    signal(SIGPIPE, SIG_IGN);
+
     loop = EV_DEFAULT;
 
     ev_io udp_read_watcher;

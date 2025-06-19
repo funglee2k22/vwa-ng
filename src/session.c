@@ -86,7 +86,7 @@ void close_stream(quicly_stream_t *stream, quicly_error_t err)
     detach_stream(stream);
 }
 
-static inline void release_resources(session_t *s)
+void release_resources(session_t *s)
 {
     if (!s)
         return;
@@ -101,16 +101,10 @@ static inline void release_resources(session_t *s)
         free(s->tcp_write_watcher);
     }
 
-    if (s->t2q_buf)
-        free(s->t2q_buf);
-
-    if (s->q2t_buf)
-        free(s->q2t_buf);
-
     return;
 }
 
-static void close_session(session_t *session)
+void close_session(session_t *session)
 {
     extern session_t *ht_tcp_to_quic, *ht_quic_to_tcp;
 

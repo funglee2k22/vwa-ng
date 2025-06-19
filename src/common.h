@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
-#define HASH_SIZE 10240
+#define SOCK_READ_BUF_SIZE 4096
 
 typedef struct cpep_frame { 
     int type; 
