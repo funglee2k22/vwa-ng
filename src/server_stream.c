@@ -103,7 +103,10 @@ session_t *server_process_ctrl_frame(quicly_stream_t *stream)
     log_info("session quic: %ld <-> tcp: %d  (%s -> %s) created.\n",
             s->stream_id, s->fd, str_src, str_dst);
 
-    quicly_stream_sync_recvbuf(stream, sizeof(frame_t));
+    if (input.len - sizeof(frame_t) > 0)
+        quicly_streambuf_ingress_shift(stream, sizeof(frame_t));
+    else
+        quicly_stream_sync_recvbuf(stream, sizeof(frame_t));
 
     return s;
 
@@ -111,8 +114,6 @@ session_t *server_process_ctrl_frame(quicly_stream_t *stream)
 
 static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
-    //log_debug("stream: %ld, received %ld bytes.\n", stream->stream_id, len);
-
     if (len == 0)
         return;
 
@@ -135,6 +136,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     }
 
     assert(s != NULL);
+
     if (!s->tcp_active) {
         log_error("stream %ld received %ld bytes, but remote tcp conn. might be closed.\n", stream_id, len);
         quicly_stream_sync_recvbuf(stream, len);
@@ -184,7 +186,15 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
          } else {
              log_error("fd %d write failed w/ %d, \"%s\". \n", s->fd, errno, strerror(errno));
              s->tcp_active = false;
-             //close(s->fd);
+             if (s->tcp_read_watcher && ev_is_active(s->tcp_read_watcher)) {
+                 ev_clear_pending(loop, s->tcp_read_watcher);
+                 ev_io_stop(loop, s->tcp_read_watcher);
+             }
+             if (s->tcp_write_watcher && ev_is_active(s->tcp_write_watcher)) {
+                 ev_clear_pending(loop, s->tcp_write_watcher);
+                 ev_io_stop(loop, s->tcp_write_watcher);
+             }
+             close(s->fd);
          }
     }
 
