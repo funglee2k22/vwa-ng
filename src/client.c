@@ -263,7 +263,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         log_info("fd: %d remote peer closed.\n", fd);
         quicly_streambuf_egress_shutdown(stream);
         s->tcp_active = false;
-        clean_up_from_tcp(&ht_tcp_to_quic, fd);
+        delete_session_init_from_tcp(s, 0);
         return;
     }
 
@@ -272,7 +272,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
             log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             quicly_streambuf_egress_shutdown(stream);
             s->tcp_active = false;
-            clean_up_from_tcp(&ht_tcp_to_quic, fd);
+            delete_session_init_from_tcp(s, errno);
         } else {
             log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }

@@ -38,11 +38,16 @@ void add_to_hash_t2q(session_t **hh, session_t *s);
 session_t *find_session_t2q(session_t **hh, int fd);
 void add_to_hash_q2t(session_t **hh, session_t *s);
 session_t *find_session_q2t(session_t **hh, long int stream_id);
-void delete_session(session_t **t2q, session_t **q2t, session_t *s);
 
-void close_stream(quicly_stream_t *stream, quicly_error_t err);
-void detach_stream(quicly_stream_t *stream);
+void delete_session_init_from_tcp(session_t *s, int errno);
+void delete_session_init_from_quic(session_t *s, quicly_error_t);
 
-void clean_up_from_tcp(session_t **hh, int fd);
-void clean_up_from_stream(session_t **hh, quicly_stream_t *stream, quicly_error_t err);
+void close_quic_stream_in_session(session_t *s, quicly_error_t err);
+
+void terminate_quic_stream(quicly_stream_t *stream, quicly_error_t err);
+
+void close_tcp_conn(session_t *s);
+
+
+
 

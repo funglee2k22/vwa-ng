@@ -37,29 +37,40 @@ static void report_cb(EV_P_ ev_timer *w, int revents)
     fflush(stdout);
     ++current_second;
     bytes_received = 0;
+}
 
-    if(current_second >= runtime_s) {
-        //quit_client();
+void client_clean_up_init_from_quic(quicly_stream_t *stream, quicly_error_t err)
+{
+    log_debug("client clean session initiated from stream: %ld with %li.\n", stream->stream_id, err);
+
+    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream->stream_id);
+
+    if (!s) {
+        terminate_quic_stream(stream, err);
+        return;
     }
+
+    delete_session_init_from_quic(s, err);
+
 }
 
 static void client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
     log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
-    clean_up_from_stream(&ht_quic_to_tcp, stream, err);
+    client_clean_up_init_from_quic(stream, err);
 }
-
 
 
 static void client_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
 {
+    long int stream_id = stream->stream_id;
+
     if (len == 0)
         return;
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
 
-    long int stream_id = stream->stream_id;
     session_t *s = find_session_q2t(&ht_quic_to_tcp, stream_id);
     if (!s || !s->tcp_active) {
         log_error("stream %ld received %ld bytes, but remote tcp conn. might be closed.\n", stream_id, len);
@@ -73,13 +84,11 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
         //                stream->stream_id, input.len);
         return;
     }
+    ssize_t orig_len = input.len;
 
     log_debug("stream: %ld recv buff has %ld bytes available.\n", stream->stream_id, input.len);
 
     ssize_t bytes_sent = -1, total_bytes_sent = 0;
-    log_debug("stream %ld, off: %ld, len: %ld, total_bytes_sent: %ld, input.len: %ld\n",
-                     stream->stream_id, off, len, total_bytes_sent, input.len);
-
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0 ) {
         input.base += bytes_sent;
         input.len -= bytes_sent;
@@ -91,7 +100,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     log_debug("stream %ld, off: %ld, len: %ld, total_bytes_sent: %ld, input.len: %ld\n",
                      stream->stream_id, off, len, total_bytes_sent, input.len);
 
-    //assert(total_bytes_sent <= (off + len));
+    assert(total_bytes_sent <= orig_len);
 
     if (total_bytes_sent > 0) {
          if (input.len > 0)
@@ -112,7 +121,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
          } else {
              log_error("fd %d write failed w/ %d, \"%s\". \n", s->fd, errno, strerror(errno));
              s->tcp_active = false;
-             close(s->fd);
+             delete_session_init_from_tcp(s, errno);
          }
     }
     return;
@@ -134,8 +143,15 @@ static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
     //FIXME do we need to terminate session here ?
 }
 
+static void client_stream_on_destroy(quicly_stream_t *stream, quicly_error_t err)
+{
+    log_info("stream %ld is destroyed w/ error %ld.\n", stream->stream_id, err);
+    quicly_streambuf_destroy(stream, err);
+    return;
+}
+
 static const quicly_stream_callbacks_t client_stream_callbacks = {
-    &quicly_streambuf_destroy,
+    &client_stream_on_destroy,
     &quicly_streambuf_egress_shift,
     &quicly_streambuf_egress_emit,
     &client_stream_send_stop,
@@ -144,7 +160,7 @@ static const quicly_stream_callbacks_t client_stream_callbacks = {
 };
 
 static const quicly_stream_callbacks_t client_ctrl_stream_callbacks = {
-    &quicly_streambuf_destroy,
+    &client_stream_on_destroy,
     &quicly_streambuf_egress_shift,
     &quicly_streambuf_egress_emit,
     &client_stream_send_stop,
