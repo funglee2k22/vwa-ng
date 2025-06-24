@@ -17,12 +17,24 @@ int create_tcp_connection(struct sockaddr *sa);
 void server_tcp_read_cb(EV_P_ ev_io *w, int revents);
 void server_tcp_write_cb(EV_P_ ev_io *w, int revents);
 
-#define USE_EV_EVENT_FEED
+void server_clean_up_init_from_quic(quicly_stream_t *stream, quicly_error_t err)
+{
+    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream->stream_id);
+
+    if (!s) {
+        terminate_quic_stream(stream, err);
+        return;
+    }
+
+    delete_session_init_from_quic(s, err);
+
+    return;
+}
 
 static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
     log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
-    clean_up_from_stream(&ht_quic_to_tcp, stream, err);
+    server_clean_up_init_from_quic(stream, err);
 }
 
 session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
@@ -186,15 +198,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
          } else {
              log_error("fd %d write failed w/ %d, \"%s\". \n", s->fd, errno, strerror(errno));
              s->tcp_active = false;
-             if (s->tcp_read_watcher && ev_is_active(s->tcp_read_watcher)) {
-                 ev_clear_pending(loop, s->tcp_read_watcher);
-                 ev_io_stop(loop, s->tcp_read_watcher);
-             }
-             if (s->tcp_write_watcher && ev_is_active(s->tcp_write_watcher)) {
-                 ev_clear_pending(loop, s->tcp_write_watcher);
-                 ev_io_stop(loop, s->tcp_write_watcher);
-             }
-             close(s->fd);
+             close_tcp_conn(s);
          }
     }
 
@@ -222,30 +226,6 @@ int create_tcp_connection(struct sockaddr *sa)
                     ntohs(((struct sockaddr_in *)sa)->sin_port));
 
     return fd;
-}
-
-int srv_tcp_to_quic(int fd, char *buf, int len)
-{
-    session_t *s = find_session_t2q(&ht_quic_to_tcp, fd);
-
-    if (!s) {
-        printf("could not find quic stream peer for tcp %d.\n", fd);
-        return -1;
-    }
-
-    long int stream_id = s->stream_id;
-    quicly_conn_t *conn = s->conn;
-    quicly_stream_t *stream = quicly_get_stream(conn, stream_id);
-
-    if (!stream) {
-        printf("failed to get stream %ld for tcp %d.\n", stream_id, fd);
-        return -1;
-    }
-
-    quicly_streambuf_egress_write(stream, buf, len);
-    //quicly_streambuf_egress_shutdown(stream);
-
-    return 0;
 }
 
 void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
@@ -305,10 +285,7 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
             }
         } else {
             log_error("fd %d write failed w/ %d, \"%s\". \n", fd, errno, strerror(errno));
-            ev_clear_pending(loop, w);
-            ev_io_stop(loop, w);
-            s->tcp_active = false;
-            close(fd);
+            close_tcp_conn(s);
         }
     }
 
@@ -348,7 +325,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
         log_info("fd: %d remote peer closed.\n", fd);
         quicly_streambuf_egress_shutdown(stream);
         s->tcp_active = false;
-        clean_up_from_tcp(&ht_tcp_to_quic, fd);
+        close_tcp_conn(s);
         return;
     }
 
@@ -357,7 +334,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
             log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             quicly_streambuf_egress_shutdown(stream);
             s->tcp_active = false;
-            clean_up_from_tcp(&ht_tcp_to_quic, fd);
+            close_tcp_conn(s);
         } else {
             log_debug("fd: %d, read() is blocked with %d, \"%s\".\n", fd, errno, strerror(errno));
         }
@@ -391,7 +368,7 @@ static void server_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
 {
     printf("server_stream_receive_reset stream-id=%li\n", stream->stream_id);
     fprintf(stderr, "received RESET_STREAM: %li\n", err);
-    quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
+    //quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 }
 
 static const quicly_stream_callbacks_t server_stream_callbacks = {
