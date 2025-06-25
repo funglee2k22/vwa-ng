@@ -2,6 +2,8 @@
 
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <math.h>
 #include <netinet/udp.h>
 #include <netdb.h>
 #include <memory.h>
@@ -133,9 +135,9 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 {
     char buf[1024];
     va_list args;
-    
-    if (priority > LOG_INFO) 
-	return;
+
+    if (priority > LOG_INFO)
+    return;
 
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
@@ -143,11 +145,15 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 #if 0
     syslog(priority, "func: %s, line: %d, %s", function, line, buf);
 #else
-    time_t current_time = time(NULL);
-    struct tm *time_info  = localtime(&current_time);
-    char time_string[256];
-    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S" , time_info);
-    fprintf(stdout, "%s, func: %s, line: %d, %s", time_string, function, line, buf);
+    struct tm *tm_info;
+    struct timeval tv;
+    char time_string[128];
+
+    gettimeofday(&tv, NULL);
+    tm_info = localtime(&tv.tv_sec);
+
+    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", tm_info);
+    fprintf(stdout, "%s.%06ld, func: %s, line: %d, %s", time_string, tv.tv_usec, function, line, buf);
     fflush(stdout);
 #endif
 
