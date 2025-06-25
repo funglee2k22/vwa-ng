@@ -13,7 +13,8 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
-#define SOCK_READ_BUF_SIZE 4096
+#define SOCK_READ_BUF_SIZE   4096
+#define MAX_LOOP_THRESH      32 
 
 typedef struct cpep_frame { 
     int type; 
