@@ -368,7 +368,6 @@ static void server_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
 {
     printf("server_stream_receive_reset stream-id=%li\n", stream->stream_id);
     fprintf(stderr, "received RESET_STREAM: %li\n", err);
-    //quicly_close(stream->conn, QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0), "");
 }
 
 static const quicly_stream_callbacks_t server_stream_callbacks = {
