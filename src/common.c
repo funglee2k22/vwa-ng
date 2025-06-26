@@ -148,13 +148,17 @@ void print_session_event(session_t *s, const char *fmt, ...)
     char str_da[128];
 
     snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->sa.sin_addr), ntohs(s->sa.sin_port));
-    snprintf(str_da, sizeof(str_sa), "%s:%d", inet_ntoa(s->da.sin_addr), ntohs(s->da.sin_port));
+    snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->da.sin_addr), ntohs(s->da.sin_port));
     timeval_subtract(&diff, &tv, &s->start_tm);
-    fprintf(stdout, "Time: %ld.%06lu, conn: %s -> %s, start_tm: %ld.%06lu, elapsed_tm: %ld.%06lu, fd: %d, stream: %ld, %s",
+    int num_streams = 0; 
+    if (s && s->conn) 
+        num_streams = quicly_num_streams(s->conn);
+ 
+    fprintf(stdout, "Time: %ld.%06lu, conn: %s -> %s, start_tm: %ld.%06lu, elapsed_tm: %ld.%06lu, fd: %d, stream: %ld, totol_stream: %d, %s",
              tv.tv_sec, tv.tv_usec, str_sa, str_da,
              s->start_tm.tv_sec, s->start_tm.tv_usec,
              diff.tv_sec, diff.tv_usec,
-             s->fd, s->stream_id, buf);
+             s->fd, s->stream_id, num_streams, buf);
 
     fflush(stdout);
     return;
@@ -183,7 +187,7 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
     char buf[1024];
     va_list args;
 
-    if (priority > 0)
+    if (priority > LOG_INFO)
         return;
 
     va_start(args, fmt);
