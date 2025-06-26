@@ -36,6 +36,12 @@ int set_non_blocking(int sockfd);
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
     __attribute__((format(printf, 4, 5)));
 
+void print_session_event(session_t *s, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
+
+void print_stream_event(quicly_stream_t *s, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
+
 void print_trace (void);
 
 #define log_debug(...)  _debug_printf(LOG_DEBUG, __func__, __LINE__, __VA_ARGS__)
@@ -84,4 +90,4 @@ static inline uint64_t get_current_pid()
     return pid;
 }
 
-
+int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);

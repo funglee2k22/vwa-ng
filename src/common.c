@@ -131,13 +131,60 @@ void print_trace (void)
     free (strings);
 }
 
+
+void print_session_event(session_t *s, const char *fmt, ...)
+{
+    char buf[1024];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    struct timeval tv, diff;
+    gettimeofday(&tv, NULL);
+
+    char str_sa[128];
+    char str_da[128];
+
+    snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->sa.sin_addr), ntohs(s->sa.sin_port));
+    snprintf(str_da, sizeof(str_sa), "%s:%d", inet_ntoa(s->da.sin_addr), ntohs(s->da.sin_port));
+    timeval_subtract(&diff, &tv, &s->start_tm);
+    fprintf(stdout, "Time: %ld.%06lu, conn: %s -> %s, start_tm: %ld.%06lu, elapsed_tm: %ld.%06lu, fd: %d, stream: %ld, %s",
+             tv.tv_sec, tv.tv_usec, str_sa, str_da,
+             s->start_tm.tv_sec, s->start_tm.tv_usec,
+             diff.tv_sec, diff.tv_usec,
+             s->fd, s->stream_id, buf);
+
+    fflush(stdout);
+    return;
+}
+
+void print_stream_event(quicly_stream_t *s, const char *fmt, ...)
+{
+    char buf[1024];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    fprintf(stdout, "Time: %ld.%06lu, stream: %ld, %s", tv.tv_sec, tv.tv_usec, s->stream_id, buf);
+
+    fflush(stdout);
+
+}
+
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
 {
     char buf[1024];
     va_list args;
 
-    if (priority > LOG_INFO)
-    return;
+    if (priority > 0)
+        return;
 
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
@@ -158,5 +205,28 @@ void _debug_printf(int priority, const char *function, int line, const char *fmt
 #endif
 
     return;
+}
+
+int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
+{
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_usec < y->tv_usec) {
+    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    y->tv_usec -= 1000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_usec - y->tv_usec > 1000000) {
+    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    y->tv_usec += 1000000 * nsec;
+    y->tv_sec -= nsec;
+  }
+
+  /* Compute the time remaining to wait.
+     tv_usec is certainly positive. */
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_usec = x->tv_usec - y->tv_usec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
 }
 
