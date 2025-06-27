@@ -354,12 +354,9 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+    log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
     quicly_stream_sync_recvbuf(stream, len);
 
-    /* remove used bytes from receive buffer */
-    quicly_streambuf_ingress_shift(stream, input.len);
-
-    log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
     const char *msg = "Server received and reply PONG!\n";
     quicly_streambuf_egress_write(stream, msg, strlen(msg));
 

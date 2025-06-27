@@ -169,7 +169,7 @@ static void server_udp_read_cb(EV_P_ ev_io *w, int revents)
         fprintf(stderr, "udp sk %d recvfrom() returns with errno %d, %s.\n", w->fd, errno, strerror(errno));
     }
 
-    //server_send_pending();
+    server_send_pending();
 }
 
 static void server_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
