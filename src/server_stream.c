@@ -59,7 +59,6 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     }
 
     assert(fd > 0);
-    set_non_blocking(fd);
     ns->fd = fd;
 
     ns->stream_active = true;
@@ -215,9 +214,13 @@ int create_tcp_connection(struct sockaddr *sa)
         return -1;
     }
 
-    if (connect(fd, sa, sizeof(struct sockaddr)) == -1) {
+    //need set non blocking before calling connect().
+    set_non_blocking(fd);
+
+    int ret = connect(fd, sa, sizeof(struct sockaddr));
+    if (ret == -1 && errno != EINPROGRESS) {
         perror("connect() failed");
-        fprintf(stderr,"connect() return %d, %s.\n", errno, strerror(errno));
+        fprintf(stderr,"tcp fd %d connect() return %d, %s.\n", fd, errno, strerror(errno));
         return -1;
     }
 
