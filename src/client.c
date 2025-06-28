@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <quicly.h>
 #include <quicly/defaults.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <errno.h>
@@ -31,8 +32,6 @@ static ptls_iovec_t resumption_token;
 struct ev_loop *loop = NULL;
 session_t *ht_quic_to_tcp = NULL;
 session_t *ht_tcp_to_quic = NULL;
-
-
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
@@ -111,7 +110,6 @@ void client_quic_read_cb(EV_P_ ev_io *w, int revents)
     }
 
     return;
-
 }
 
 void send_heartbeat(quicly_conn_t *conn)
@@ -199,8 +197,6 @@ void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
 
     assert(total_bytes_sent <= orig_len);
 
-
-
     if (total_bytes_sent > 0) {
         assert((ssize_t) input.len >= 0);
         if (input.len > 0)
@@ -225,6 +221,8 @@ void client_tcp_write_cb(EV_P_ ev_io *w, int revents)
              log_error("fd %d write failed w/ %d, \"%s\". \n", s->fd, errno, strerror(errno));
              ev_clear_pending(loop, w);
              ev_io_stop(loop, w);
+             s->tcp_active = false;
+             close_tcp_conn(s);
          }
     }
 
@@ -247,6 +245,11 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     quicly_stream_t *stream = s->stream;
     assert(stream != NULL);
+
+    if (!s->first_read_tcp) {
+        s->first_read_tcp = true;
+        print_session_event(s, "host: client, func: %s, line: %d, event: read_from_tcp.\n", __func__, __LINE__);
+    }
 
     //TODO need a way to detect egress queue length, only call read
     // if queue_length <= queue_capacity - read buffer size.
@@ -334,10 +337,10 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
         return;
     }
 
-    char str1[1024], str2[1024]; ;
-    snprintf(str1, sizeof(str1), "Accepted client %s:%d ", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port));
-    snprintf(str2, sizeof(str2), " %s:%d on fd %d\n", inet_ntoa(da.sin_addr), ntohs(da.sin_port), fd);
-    log_info("%s -> %s\n", str1, str2);
+    char str1[1024], str2[1024];
+    snprintf(str1, sizeof(str1), "%s:%d", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port));
+    snprintf(str2, sizeof(str2), "%s:%d", inet_ntoa(da.sin_addr), ntohs(da.sin_port));
+    log_info("conn: %s -> %s, fd: %d, event: accept.\n", str1, str2, fd);
 
     //open quicly stream;
     quicly_stream_t *stream = NULL;
@@ -351,6 +354,8 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     add_to_hash_t2q(&ht_tcp_to_quic, session);
     add_to_hash_q2t(&ht_quic_to_tcp, session);
 
+    gettimeofday(&session->start_tm, NULL);
+    print_session_event(session, "func: %s, line: %d, event: session_created.\n", __func__, __LINE__);
     client_send_ctrl_frame(stream, &sa, &da);
 
     //preparing ev watchers
@@ -360,9 +365,6 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
 
     ev_io *client_tcp_write_watcher = (ev_io *)malloc(sizeof(ev_io));
     ev_io_init(client_tcp_write_watcher, client_tcp_write_cb, fd, EV_WRITE);
-#ifndef USE_EV_EVENT_FEED
-    ev_io_start(loop, client_tcp_write_watcher);
-#endif
 
     session->tcp_read_watcher = client_tcp_read_watcher;
     session->tcp_write_watcher = client_tcp_write_watcher;
@@ -414,6 +416,8 @@ int clt_setup_quic_connection(const char *host, const char *port)
     client_ctx.tls = get_tlsctx();
     client_ctx.stream_open = &stream_open;
     client_ctx.closed_by_remote = &closed_by_remote;
+    client_ctx.transport_params.max_streams_bidi = 4096;
+    client_ctx.transport_params.max_streams_uni = 4096;
     client_ctx.transport_params.max_stream_data.uni = UINT32_MAX;
     client_ctx.transport_params.max_stream_data.bidi_local = UINT32_MAX;
     client_ctx.transport_params.max_stream_data.bidi_remote = UINT32_MAX;

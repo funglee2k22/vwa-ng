@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <quicly/streambuf.h>
 
 static int current_second = 0;
@@ -77,6 +78,13 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
         quicly_stream_sync_recvbuf(stream, len);
         return;
     }
+
+    if (s && !s->first_read_quic) {
+        s->first_read_quic = true;
+        print_session_event(s, "func: %s, line: %d, event: first_read_quic.\n", __func__, __LINE__);
+    }
+
+
 
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
     if (input.len == 0) {

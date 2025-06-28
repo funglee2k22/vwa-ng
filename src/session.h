@@ -15,9 +15,8 @@
 
 typedef struct session {
     struct timeval start_tm;
-    struct timeval first_read_quic;
-    struct timeval first_read_tcp;
-    struct timeval stop_tm;
+    bool first_read_quic;
+    bool first_read_tcp;
     long int stream_id;      // on both client and server, stream_id is the key
     int fd;
     quicly_stream_t *stream;
