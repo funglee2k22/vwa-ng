@@ -1,13 +1,13 @@
-#include <stdio.h>      
-#include <stdlib.h>     
-#include <string.h>     
-#include <sys/socket.h> 
-#include <netinet/in.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <time.h>       
-#include <ev.h> 
+#include <time.h>
+#include <ev.h>
 
 
 int main(int argc, char **argv)
@@ -37,57 +37,57 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    if (setsockopt(fd, IPPROTO_IP, IP_RECVOPTS, &enable, sizeof(int)) < 0) { 
+    if (setsockopt(fd, IPPROTO_IP, IP_RECVOPTS, &enable, sizeof(int)) < 0) {
         perror("setsockopt IP_RECVOPTS failed.");
-	return -1;
+    return -1;
     }
 
-    if (setsockopt(fd, SOL_IP, IP_ORIGDSTADDR, &enable, sizeof(int)) < 0) { 
+    if (setsockopt(fd, SOL_IP, IP_ORIGDSTADDR, &enable, sizeof(int)) < 0) {
         perror("setsockopt IP_ORIGDSTADDR failed.");
-	return -1;
-    } 
+    return -1;
+    }
 
-    struct iovec iov; 
-    struct msghdr msg; 
-    struct cmsghdr *cmsgtmp; 
-    struct in_pktinfo *pktinfo; 
+    struct iovec iov[1];
+    struct msghdr msg;
+    struct cmsghdr *cmsgtmp;
+    struct in_pktinfo *pktinfo;
     char rcv_buf[4096];
     char cmsg_buf[CMSG_SPACE(sizeof(struct in_pktinfo))];
 
     struct sockaddr_in srcaddr;
-    struct sockaddr_in dstaddr, temp; 
-    iov.iov_base = rcv_buf;
-    iov.iov_len = sizeof(rcv_buf);
+    struct sockaddr_in dstaddr, temp;
+    iov[0].iov_base = rcv_buf;
+    iov[0].iov_len = sizeof(rcv_buf);
     msg.msg_control = cmsg_buf;
     msg.msg_controllen = sizeof(cmsg_buf);
     msg.msg_flags = 0;
-    msg.msg_iov = &iov;
+    msg.msg_iov = iov;
     msg.msg_iovlen = 1;
-    msg.msg_name = &temp; 
+    msg.msg_name = &temp;
 
     printf("start listening on UDP port %d\n", port);
     bzero(&srcaddr, sizeof(srcaddr));
-    bzero(&dstaddr, sizeof(srcaddr));
+    bzero(&dstaddr, sizeof(dstaddr));
 
     char buffer[4096];
     while (1) {
-	int len = recvmsg(fd, &msg, MSG_OOB); 
+        int len = recvmsg(fd, &msg, MSG_OOB);
         memcpy(&srcaddr, msg.msg_name, sizeof(srcaddr));
         int i = 0;
-	for (cmsgtmp = CMSG_FIRSTHDR(&msg); cmsgtmp != NULL; cmsgtmp = CMSG_NXTHDR(&msg, cmsgtmp)) { 
+        for (cmsgtmp = CMSG_FIRSTHDR(&msg); cmsgtmp != NULL; cmsgtmp = CMSG_NXTHDR(&msg, cmsgtmp)) {
             i += 1;
-	    printf("iter: %d, cmsg_level: %d, cmsg_type: %d \n", i, cmsgtmp->cmsg_level, cmsgtmp->cmsg_type);
-	    if (cmsgtmp->cmsg_level == SOL_IP && cmsgtmp->cmsg_type == IP_ORIGDSTADDR) { 
-		printf("IP_ORIGDSTADDR is found.\n");
-                struct sockaddr_in *p = (struct sockaddr_in *)CMSG_DATA(cmsgtmp); 
-		memcpy(&dstaddr, p, sizeof(dstaddr));
-	    }
-	}
+            printf("iter: %d, cmsg_level: %d, cmsg_type: %d \n", i, cmsgtmp->cmsg_level, cmsgtmp->cmsg_type);
+            if (cmsgtmp->cmsg_level == SOL_IP && cmsgtmp->cmsg_type == IP_ORIGDSTADDR) {
+                printf("IP_ORIGDSTADDR is found.\n");
+                struct sockaddr_in *p = (struct sockaddr_in *)CMSG_DATA(cmsgtmp);
+                memcpy(&dstaddr, p, sizeof(dstaddr));
+            }
+        }
 
         printf("original src ip: %s:%d, -> ", inet_ntoa(srcaddr.sin_addr), ntohs(srcaddr.sin_port));
         printf("  dst ip: %s:%d  \n", inet_ntoa(dstaddr.sin_addr), ntohs(dstaddr.sin_port));
-     
-        //printf("inet_ntoa() must be funny. original src ip: %s:%d, -> %s:%d\n", inet_ntoa(srcaddr.sin_addr), ntohs(srcaddr.sin_port), inet_ntoa(dstaddr.sin_addr), ntohs(dstaddr.sin_port));
+        printf(" len: %d,  iov[0].iov_len: %ld \n", len,  iov[0].iov_len); 
+
     }
 
     close(fd);

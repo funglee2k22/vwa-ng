@@ -6,6 +6,10 @@
 #include <unistd.h>
 #include <linux/if.h>
 #include <linux/if_tun.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
@@ -17,7 +21,7 @@ int tun_open(char* devname) {
         exit(1);
     }
     memset(&ifr, 0, sizeof(ifr));
-    ifr.ifr_flags = IFF_TUN;
+    ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
     strncpy(ifr.ifr_name, devname, IFNAMSIZ);
 
     if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr)) == -1) {
@@ -28,9 +32,15 @@ int tun_open(char* devname) {
     return fd;
 }
 
-void process_pkts(char *buf, struct sockaddr_in *src, struct sockaddr_in *dst)
+int process_pkts(char *buf, struct sockaddr_in *src, struct sockaddr_in *dst)
 {
     struct iphdr *iph = (struct iphdr *)buf;
+        
+    if (iph->protocol != IPPROTO_UDP) { 
+         printf("iph protocol %u, ntohs %u.\n", iph->protocol, ntohs(iph->protocol));
+         return -1;
+    } 
+
     struct udphdr *udph = (struct udphdr *)(buf + iph->ihl * 4);
 
     src->sin_family = AF_INET;
