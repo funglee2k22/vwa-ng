@@ -13,6 +13,7 @@ void enable_gso();
 bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn);
 void print_escaped(const char *src, size_t len);
 
+int set_non_blocking(int sockfd);
 
 static inline int64_t min_int64(int64_t a, int64_t b)
 {

@@ -130,6 +130,8 @@ int create_tcp_listening_socket(const short port)
         return -1;
     }
 
+    set_non_blocking(sd);
+
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
@@ -238,6 +240,8 @@ void accept_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
         perror("accept error");
         return;
     }
+
+    set_non_blocking(client_sd);
 
     struct ev_io *w_client = (struct ev_io*) malloc (sizeof(struct ev_io));
     ev_io_init(w_client, tcp_read_cb, client_sd, EV_READ);

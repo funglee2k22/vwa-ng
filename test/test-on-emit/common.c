@@ -1,11 +1,14 @@
 #include "common.h"
 
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/udp.h>
 #include <netdb.h>
 #include <memory.h>
 #include <picotls/openssl.h>
 #include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 ptls_context_t *get_tlsctx()
 {
@@ -142,6 +145,16 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
             return false;
         }
     };
+}
+
+int set_non_blocking(int sockfd)
+{
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    if (fcntl(sockfd, F_SETFL, (flags < 0 ? 0 : flags) | O_NONBLOCK) == -1) {
+        perror("set_non_blocking");
+        return -1;
+    }
+    return 0;
 }
 
 void print_now()
