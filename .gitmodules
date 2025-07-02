@@ -4,3 +4,6 @@
 [submodule "extern/uthash"]
 	path = extern/uthash
 	url = https://github.com/troydhanson/uthash.git
+[submodule "extern/mp-qperf"]
+	path = extern/mp-qperf
+	url = https://git.viasat.com/SystemSciences/mp-qperf

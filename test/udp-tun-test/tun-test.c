@@ -28,12 +28,29 @@ int tun_open(char* devname) {
     return fd;
 }
 
-void process_pkts(char *buf) 
-{ 
+void process_pkts(char *buf, struct sockaddr_in *src, struct sockaddr_in *dst)
+{
+    struct iphdr *iph = (struct iphdr *)buf;
+    struct udphdr *udph = (struct udphdr *)(buf + iph->ihl * 4);
 
+    src->sin_family = AF_INET;
+    src->sin_addr.s_addr = iph->saddr;
+    src->sin_port = udph->source;
 
+    dst->sin_family = AF_INET;
+    dst->sin_addr.s_addr = iph->daddr;
+    dst->sin_port = udph->dest;
 
-} 
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &src->sin_addr.s_addr, src_ip, sizeof(src_ip));
+    inet_ntop(AF_INET, &dst->sin_addr.s_addr, dst_ip, sizeof(dst_ip));
+
+    printf("received UDP packet from %s:%u to %s:%u, udp_len: %u \n",
+           src_ip, ntohs(src->sin_port), dst_ip, ntohs(dst->sin_port), ntohs(udph->len));
+
+    return ntohs(udph->len);
+}
 
 
 int main(int argc, char* argv[]) {
@@ -41,10 +58,11 @@ int main(int argc, char* argv[]) {
     char buf[1600];
     fd = tun_open("tun0");
     printf("Device tun0 opened with fd %d\n", fd);
+    struct sockaddr_in src, dst;
     while (1) {
-        printf("blocking before read ? \n");
         nbytes = read(fd, buf, sizeof(buf));
         printf("Read %d bytes from tun0\n", nbytes);
+        int udp_pay_load = process_pkts(buf, &src, &dst);
     }
     return 0;
 }
