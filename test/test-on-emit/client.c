@@ -12,7 +12,7 @@
 #include <stdbool.h>
 #include <float.h>
 #include <quicly/streambuf.h>
-
+#include <sys/time.h>
 #include <picotls/../../t/util.h>
 
 static int client_socket = -1;
@@ -150,7 +150,7 @@ int create_tcp_listening_socket(const short port)
     return sd;
 }
 
-void quicly_streambuf_egress_dump_info(quicly_stream_t *stream)
+void debug_streambuf_egress_dump_info(quicly_stream_t *stream)
 {
     quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
     quicly_sendbuf_t *egress = &sbuf->egress;
@@ -190,12 +190,12 @@ void tcp_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
         fprintf(stdout, "read %ld bytes from fd: %d.\n", read_bytes, watcher->fd);
 
         printf("iter: %d, before write ", i);
-        quicly_streambuf_egress_dump_info(stream);
+        debug_streambuf_egress_dump_info(stream);
 
         quicly_streambuf_egress_write(stream, buffer, read_bytes);
 
         printf("iter: %d, after write ", i);
-        quicly_streambuf_egress_dump_info(stream);
+        debug_streambuf_egress_dump_info(stream);
         bytes_sent_to_quic += read_bytes;
         i += 1;
     }
@@ -212,6 +212,12 @@ void tcp_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
          close(watcher->fd);
          free(watcher);
          return;
+    }
+    
+    printf("calling send_pending\n");
+    if(!send_pending(&client_ctx, client_socket, conn)) {
+        printf("failed to connect: send_pending failed\n");
+        exit(1);
     }
 
     return;

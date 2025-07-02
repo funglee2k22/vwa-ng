@@ -4,6 +4,7 @@
 #include <ev.h>
 #include <stdbool.h>
 #include <quicly/streambuf.h>
+#include <sys/time.h>
 
 static int current_second = 0;
 static uint64_t bytes_received = 0;
@@ -73,10 +74,6 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
         return;
     }
 
-    printf("sleep 3 seconds.");
-    sleep(3);
-
-
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
 
     printf("input.base: %p, input.len: %ld.\n", input.base, input.len);
@@ -96,10 +93,24 @@ static void client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t 
     fprintf(stderr, "received RESET_STREAM: %li\n", err);
 }
 
+static void client_stream_send_emit(quicly_stream_t *stream, size_t off, void *dst, size_t *len, int *wrote_all) 
+{
+    print_now(); 
+    printf("before calling emit: %lu, off: %lu, dst: %p, size: %lu, wrote_all: %d \n", 
+                    stream->stream_id, off, dst, *len, *wrote_all);
+ 
+    quicly_streambuf_egress_emit(stream, off, dst, len, wrote_all);
+
+    print_now();
+    printf("after calling emit: %lu, off: %lu, dst: %p, size: %lu, wrote_all: %d \n", 
+                    stream->stream_id, off, dst, *len, *wrote_all);
+
+}
+
 static const quicly_stream_callbacks_t client_stream_callbacks = {
     &quicly_streambuf_destroy,
     &quicly_streambuf_egress_shift,
-    &quicly_streambuf_egress_emit,
+    &client_stream_send_emit,
     &client_stream_send_stop,
     &client_stream_receive,
     &client_stream_receive_reset

@@ -34,7 +34,7 @@ int main()
 	}
 
 	char buf[1024];
-    ssize_t target_size = 1024 * 10, total_sent_size = 0, sent_size = 0; 
+    ssize_t target_size = 1024 * 3, total_sent_size = 0, sent_size = 0; 
     int i = 0; 
     
     do { 
@@ -45,6 +45,7 @@ int main()
          total_sent_size += sent_size; 
          printf("sent#%d, \"%.*s\" \n", i, (int) sent_size, buf);
          i += 1; 
+         sleep(5);
     } while (total_sent_size < target_size); 
          
     printf("total sent %ld bytes\n", total_sent_size);

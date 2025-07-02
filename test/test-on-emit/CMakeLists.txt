@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.6.0)
 project(quicly-snd-emit-test VERSION 1.0.0 LANGUAGES C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
+add_executable(tcp_client simple_tcp_client.c)
 add_executable(send_emit_test main.c
     client.h client.c
     client_stream.h client_stream.c

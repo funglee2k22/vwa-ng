@@ -144,6 +144,22 @@ bool send_pending(quicly_context_t *ctx, int fd, quicly_conn_t *conn)
     };
 }
 
+void print_now()
+{
+    struct tm *tm_info;
+    struct timeval tv;
+    char time_string[128];
+
+    gettimeofday(&tv, NULL);
+    tm_info = localtime(&tv.tv_sec);
+
+    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", tm_info);
+
+    printf("time: %s, ", time_string);
+    return;
+}
+
+
 void print_escaped(const char *src, size_t len)
 {
     for(size_t i = 0; i < len; ++i) {

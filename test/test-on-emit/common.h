@@ -54,3 +54,6 @@ static inline uint64_t get_current_pid()
 
     return pid;
 }
+
+void print_now();
+
