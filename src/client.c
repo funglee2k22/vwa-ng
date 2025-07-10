@@ -22,8 +22,9 @@
 
 static int client_quic_socket = -1;
 static int client_udp_tun_fd = -1;
+static int client_udp_raw_fd = -1;
 static int client_tcp_socket = -1;
-static quicly_conn_t *conn = NULL;
+quicly_conn_t *conn = NULL;
 static ev_timer client_timeout;
 static quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
@@ -527,9 +528,14 @@ int main(int argc, char** argv)
     client_udp_tun_fd = open_tun_dev(devname);
     assert(client_udp_tun_fd > 0);
 
+    client_udp_raw_fd = create_udp_raw_socket(client_udp_tun_fd);
+    assert(client_udp_raw_fd > 0);
+
+    //setting all socket in non-blocking mode.
     set_non_blocking(client_tcp_socket);
     set_non_blocking(client_quic_socket);
     set_non_blocking(client_udp_tun_fd);
+    set_non_blocking(client_udp_raw_fd);
 
     ev_io udp_read_watcher;
     ev_io_init(&udp_read_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
