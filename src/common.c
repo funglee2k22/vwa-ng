@@ -148,8 +148,8 @@ void print_session_event(session_t *s, const char *fmt, ...)
     char str_sa[128];
     char str_da[128];
 
-    snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->sa.sin_addr), ntohs(s->sa.sin_port));
-    snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->da.sin_addr), ntohs(s->da.sin_port));
+    snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->req.sa.sin_addr), ntohs(s->req.sa.sin_port));
+    snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->req.da.sin_addr), ntohs(s->req.da.sin_port));
     timeval_subtract(diff, tv, &s->start_tm);
 
     int num_streams = 0; 

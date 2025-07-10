@@ -6,8 +6,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_subdirectory(extern)
 
 add_executable(new-clt src/uthash.h src/common.h src/common.c src/client.h
-	        src/session.h src/session.c
-                src/client_stream.h src/client_stream.c src/client.c) 
+            src/session.h src/session.c
+                src/client_stream.h src/client_stream.c src/client.c)
 target_link_libraries(new-clt PRIVATE quicly ev picotls)
 target_compile_definitions(new-clt PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(new-clt PRIVATE
@@ -18,8 +18,8 @@ target_compile_options(new-clt PRIVATE
 
 
 add_executable(new-srv src/uthash.h src/common.h src/common.c src/server.h
-	        src/session.h src/session.c
-                src/server_stream.h src/server_stream.c src/server.c) 
+            src/session.h src/session.c
+                src/server_stream.h src/server_stream.c src/server.c)
 target_link_libraries(new-srv PRIVATE quicly ev picotls)
 target_compile_definitions(new-srv PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(new-srv PRIVATE
@@ -28,7 +28,9 @@ target_compile_options(new-srv PRIVATE
     -Werror=shift-count-overflow
 )
 
+add_subdirectory(src)
+
 #----------------
-#tests and small poc 
+#tests and small poc
 #---------------
 add_subdirectory(test)

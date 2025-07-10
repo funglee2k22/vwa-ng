@@ -42,11 +42,10 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     long int stream_id = stream->stream_id;
     session_t *ns = (session_t *) malloc(sizeof(session_t));
     bzero(ns, sizeof(session_t));
-    memcpy(&(ns->da), &(ctrl_frame->s.dst), sizeof(struct sockaddr_in));
-    memcpy(&(ns->sa), &(ctrl_frame->s.src), sizeof(struct sockaddr_in));
+    memcpy(&(ns->req), &(ctrl_frame->req), sizeof(request_t));
 
-    struct sockaddr_in *da = (struct sockaddr_in *) &(ns->da);
-    struct sockaddr_in *sa = (struct sockaddr_in *) &(ns->sa);
+    struct sockaddr_in *da = (struct sockaddr_in *) &(ns->req.da);
+    struct sockaddr_in *sa = (struct sockaddr_in *) &(ns->req.sa);
     ns->stream_id = stream_id;
     ns->conn = stream->conn;
     ns->stream = stream;
@@ -108,8 +107,8 @@ session_t *server_process_ctrl_frame(quicly_stream_t *stream)
     s->tcp_active = s->stream_active = s->ctrl_frame_received = true;
 
     char str_src[128], str_dst[128];
-    snprintf(str_src, sizeof(str_src), "%s:%d", inet_ntoa(s->sa.sin_addr), ntohs(s->sa.sin_port));
-    snprintf(str_dst, sizeof(str_dst), "%s:%d", inet_ntoa(s->da.sin_addr), ntohs(s->da.sin_port));
+    snprintf(str_src, sizeof(str_src), "%s:%d", inet_ntoa(s->req.sa.sin_addr), ntohs(s->req.sa.sin_port));
+    snprintf(str_dst, sizeof(str_dst), "%s:%d", inet_ntoa(s->req.da.sin_addr), ntohs(s->req.da.sin_port));
 
     log_info("session quic: %ld <-> tcp: %d  (%s -> %s) created.\n",
             s->stream_id, s->fd, str_src, str_dst);

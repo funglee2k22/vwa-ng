@@ -13,6 +13,17 @@
 
 #define APP_BUF_SIZE (1 * 1024 * 1024)
 
+typedef struct request {
+    struct sockaddr_in sa;   // socket src addr
+    struct sockaddr_in da;   // socket original dst addr
+    u_int8_t protocol;       // protocol IPPROTO_UDP or IPPROTO_TCP
+} request_t;
+
+typedef struct cpep_frame {
+    int type;
+    request_t req;
+} frame_t;
+
 typedef struct session {
     struct timeval start_tm;
     bool first_read_quic;
@@ -22,17 +33,18 @@ typedef struct session {
     quicly_stream_t *stream;
     bool stream_active;
     bool tcp_active;
-    struct sockaddr_in sa;   // TCP socket src addr
-    struct sockaddr_in da;   // TCP socket original dst addr
     quicly_conn_t *conn;     // quicly_conn_t *conn used by quicly stream
     union {
         bool ctrl_frame_received;
         bool ctrl_frame_sent;
     };
+    request_t req;
     ev_io *tcp_read_watcher;
     ev_io *tcp_write_watcher;
     UT_hash_handle hh_t2q;    //uthash requires different handle for each hashmap
     UT_hash_handle hh_q2t;    //
+    UT_hash_handle hh_q2u;    // use quicly stream to find UDP five tuples
+    UT_hash_handle hh_u2q;    // use UDP five tuples to find QUIC Stream 
 } session_t;
 
 extern struct ev_loop *loop;

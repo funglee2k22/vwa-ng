@@ -1,4 +1,5 @@
 #include "client.h"
+#include "client_udp.h"
 #include "client_stream.h"
 #include "common.h"
 #include "session.h"
@@ -20,6 +21,7 @@
 #include <picotls/../../t/util.h>
 
 static int client_quic_socket = -1;
+static int client_udp_tun_fd = -1;
 static int client_tcp_socket = -1;
 static quicly_conn_t *conn = NULL;
 static ev_timer client_timeout;
@@ -305,8 +307,9 @@ static void inline client_send_ctrl_frame(quicly_stream_t *stream, struct sockad
 {
     frame_t ctrl_frame;
     ctrl_frame.type = 1;
-    memcpy(&(ctrl_frame.s.src), sa, sizeof(struct sockaddr_in));
-    memcpy(&(ctrl_frame.s.dst), da, sizeof(struct sockaddr_in));
+    memcpy(&(ctrl_frame.req.sa), sa, sizeof(struct sockaddr_in));
+    memcpy(&(ctrl_frame.req.da), da, sizeof(struct sockaddr_in));
+    ctrl_frame.req.protocol = IPPROTO_TCP;
 
     //send clt side session info to server;
     quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));
@@ -348,8 +351,9 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     assert(ret == 0);
 
     session_t *session = client_create_session(fd, stream);
-    memcpy(&(session->sa), (void *)&sa, salen);
-    memcpy(&(session->da), (void *)&da, dalen);
+    memcpy(&(session->req.sa), (void *)&sa, salen);
+    memcpy(&(session->req.da), (void *)&da, dalen);
+    session->req.protocol = IPPROTO_TCP;
 
     add_to_hash_t2q(&ht_tcp_to_quic, session);
     add_to_hash_q2t(&ht_quic_to_tcp, session);
@@ -494,7 +498,6 @@ void sigpipe_handler(int signo)
     return;
 }
 
-
 int main(int argc, char** argv)
 {
     int port = 4433;
@@ -502,6 +505,7 @@ int main(int argc, char** argv)
     const char *host = "192.168.10.1";
     const char *logfile = NULL;
     const char *local_host = "127.0.0.1";
+    const char *devname = "tun0";
 
     loop = EV_DEFAULT;
 
@@ -520,27 +524,29 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
+    client_udp_tun_fd = open_tun_dev(devname);
+    assert(client_udp_tun_fd > 0);
+
     set_non_blocking(client_tcp_socket);
     set_non_blocking(client_quic_socket);
+    set_non_blocking(client_udp_tun_fd);
 
-    ev_io udp_read_watcher, udp_write_watcher;
+    ev_io udp_read_watcher;
     ev_io_init(&udp_read_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
     ev_io_start(loop, &udp_read_watcher);
-
-#if 0
-    ev_io_init(&udp_write_watcher, &client_quic_write_cb, client_quic_socket, EV_WRITE);
-    ev_io_start(loop, &udp_write_watcher);
-#endif
 
     ev_io tcp_socket_accept_watcher;
     ev_io_init(&tcp_socket_accept_watcher, &client_tcp_accept_cb, client_tcp_socket, EV_READ);
     ev_io_start(loop, &tcp_socket_accept_watcher);
 
-    //ev_init(&client_timeout, &client_timeout_cb);
-    //client_refresh_timeout();
+    ev_io tun_read_watcher;
+    ev_io_init(&tun_read_watcher, client_tun_read_cb, client_udp_tun_fd, EV_READ);
+    ev_io_start(loop, &tun_read_watcher);
+
     ev_timer_init(&client_timeout, &client_timeout_cb, 0.1, 0.0);
     ev_timer_start(EV_DEFAULT, &client_timeout);
 
     ev_run(loop, 0);
 
 }
+

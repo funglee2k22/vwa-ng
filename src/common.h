@@ -15,16 +15,6 @@
 
 #define SOCK_READ_BUF_SIZE   4096
 
-typedef struct cpep_frame { 
-    int type; 
-    union { 
-       struct { 
-           struct sockaddr_in src;
-           struct sockaddr_in dst;     //original 
-       } s; 
-    }; 
-} frame_t; 
-
 ptls_context_t *get_tlsctx();
 
 struct addrinfo *get_address(const char *host, const char *port);

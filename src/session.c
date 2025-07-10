@@ -140,11 +140,11 @@ void delete_session_init_from_tcp(session_t *s, int errno)
      assert(s != NULL);
 
      char str_src[128], str_dst[128];
-     inet_ntop(AF_INET, &s->sa.sin_addr, str_src, sizeof(str_src));
-     inet_ntop(AF_INET, &s->da.sin_addr, str_dst, sizeof(str_dst));
+     inet_ntop(AF_INET, &s->req.sa.sin_addr, str_src, sizeof(str_src));
+     inet_ntop(AF_INET, &s->req.da.sin_addr, str_dst, sizeof(str_dst));
 
      log_debug("closing session handling tcp %d, [%s:%d <-> %s:%d] with errno %d, \"%s\"\n.",
-                   s->fd, str_src, ntohs(s->sa.sin_port), str_dst, ntohs(s->da.sin_port),
+                   s->fd, str_src, ntohs(s->req.sa.sin_port), str_dst, ntohs(s->req.da.sin_port),
                    errno, strerror(errno));
 
      close_tcp_conn(s);
@@ -168,11 +168,11 @@ void delete_session_init_from_quic(session_t *s, quicly_error_t err)
      assert(s != NULL);
 
      char str_src[128], str_dst[128];
-     inet_ntop(AF_INET, &s->sa.sin_addr, str_src, sizeof(str_src));
-     inet_ntop(AF_INET, &s->da.sin_addr, str_dst, sizeof(str_dst));
+     inet_ntop(AF_INET, &s->req.sa.sin_addr, str_src, sizeof(str_src));
+     inet_ntop(AF_INET, &s->req.da.sin_addr, str_dst, sizeof(str_dst));
 
      log_debug("closing session handling stream  %ld, [%s:%d <-> %s:%d] with quicly errno %ld.\n",
-                   s->stream_id, str_src, ntohs(s->sa.sin_port), str_dst, ntohs(s->da.sin_port),
+                   s->stream_id, str_src, ntohs(s->req.sa.sin_port), str_dst, ntohs(s->req.da.sin_port),
                    err);
 
      close_quic_stream_in_session(s, err);
