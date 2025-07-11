@@ -22,7 +22,7 @@
 
 static int client_quic_socket = -1;
 static int client_udp_tun_fd = -1;
-static int client_udp_raw_fd = -1;
+int client_udp_raw_fd = -1;
 static int client_tcp_socket = -1;
 quicly_conn_t *conn = NULL;
 static ev_timer client_timeout;

@@ -11,6 +11,7 @@ add_executable(new-clt
                src/client.h src/client.c
                src/session.h src/session.c
                src/client_stream.h src/client_stream.c
+               src/client_udp_stream.h src/client_udp_stream.c
                src/client_udp.h src/client_udp.c)
 target_link_libraries(new-clt PRIVATE quicly ev picotls)
 target_compile_definitions(new-clt PRIVATE CPEP_VERSION="${PROJECT_VERSION}")

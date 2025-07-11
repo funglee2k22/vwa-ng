@@ -35,14 +35,47 @@
 
 session_t *ht_quic_to_udp = NULL;
 session_t *ht_udp_to_quic = NULL;
-extern int client_quic_socket; 
-extern quicly_conn_t *conn; 
-extern quicly_context_t client_ctx; 
+extern int client_quic_socket;
+extern quicly_conn_t *conn;
+extern quicly_context_t client_ctx;
+extern const quicly_stream_callbacks_t udp_client_stream_callbacks;
 
-/* 
- * adding <udp five tuples, quicly_stream *> into hash table, 
- * key is the five tuples. 
- */ 
+
+void print_req_info(struct sockaddr_in *src, struct sockaddr_in *dst, ssize_t len);
+
+void print_req(request_t *req)
+{
+    char src_ip[INET_ADDRSTRLEN], dst_ip[INET_ADDRSTRLEN];
+    uint sport = ntohs(req->sa.sin_port);
+    uint dport = ntohs(req->da.sin_port);
+    inet_ntop(AF_INET, &req->sa.sin_addr.s_addr, src_ip, sizeof(src_ip));
+    inet_ntop(AF_INET, &req->da.sin_addr.s_addr, dst_ip, sizeof(dst_ip));
+    printf("req: 0x%p, %s:%u->%s:%u, proto: %d\n",
+               req, src_ip, sport, dst_ip, dport, req->protocol);
+}
+
+void dump_hash(char *func, int line, session_t **hh)
+{
+    session_t *s, *temp;
+    int count = 0;
+    printf("func: %s, line: %d, hash table 0x%p content: \n", func, line, *hh);
+    HASH_ITER(hh_u2q, *hh, s, temp) {
+        char src_ip[INET_ADDRSTRLEN], dst_ip[INET_ADDRSTRLEN];
+        uint sport, dport;
+        sport = ntohs(s->req.sa.sin_port);
+        dport = ntohs(s->req.da.sin_port);
+        inet_ntop(AF_INET, &s->req.sa.sin_addr.s_addr, src_ip, sizeof(src_ip));
+        inet_ntop(AF_INET, &s->req.da.sin_addr.s_addr, dst_ip, sizeof(dst_ip));
+        printf("    #%d, %s:%u->%s:%u, proto: %d, stream: %ld.\n",
+                  count, src_ip, sport, dst_ip, dport, s->req.protocol, s->stream->stream_id);
+        count += 1;
+    }
+}
+
+/*
+ * adding <udp five tuples, quicly_stream *> into hash table,
+ * key is the five tuples.
+ */
 void add_to_hash_u2q(session_t **hh, session_t *s)
 {
     session_t *r = NULL;
@@ -54,67 +87,68 @@ void add_to_hash_u2q(session_t **hh, session_t *s)
     } else {
         HASH_REPLACE(hh_u2q, *hh, req, sizeof(request_t), s, r);
     }
+
     return;
 }
 
 
-void add_to_hash_q2u(session_t **hh, session_t *s) 
-{ 
-    session_t *r = NULL; 
+void add_to_hash_q2u(session_t **hh, session_t *s)
+{
+    session_t *r = NULL;
     quicly_stream_t *stream = s->stream;
 
     HASH_FIND(hh_q2u, *hh, &stream, sizeof(stream),  r);
 
-    if (!r) { 
+    if (!r) {
         HASH_ADD(hh_q2u, *hh, stream, sizeof(stream), s);
-    } else { 
-        HASH_REPLACE(hh_q2u, *hh, stream, sizeof(stream), s, r); 
-    } 
+    } else {
+        HASH_REPLACE(hh_q2u, *hh, stream, sizeof(stream), s, r);
+    }
     return;
 }
 
 session_t *find_session_u2q(session_t **hh, request_t *req)
-{ 
+{
     session_t *r = NULL;
 
-    HASH_FIND(hh_u2q, *hh, req, sizeof(request_t), r); 
+    HASH_FIND(hh_u2q, *hh, req, sizeof(request_t), r);
 
     return r;
-}  
+}
 
 session_t *find_session_q2u(session_t **hh, quicly_stream_t *stream)
-{ 
-    session_t *r = NULL; 
+{
+    session_t *r = NULL;
 
-    HASH_FIND(hh_u2q, *hh, &stream, sizeof(stream), r);
+    HASH_FIND(hh_q2u, *hh, &stream, sizeof(stream), r);
 
     return r;
-} 
+}
 
-void delete_session_u2q(session_t **hh, session_t *s) 
-{ 
-    if (!s || !hh) 
+void delete_session_u2q(session_t **hh, session_t *s)
+{
+    if (!s || !hh)
         return;
- 
+
     HASH_DELETE(hh_u2q, *hh, s);
-   
+
     return;
 }
- 
 
-void delete_session_q2u(session_t **hh, session_t *s) 
-{ 
-    if (!s || !hh) 
+
+void delete_session_q2u(session_t **hh, session_t *s)
+{
+    if (!s || !hh)
         return;
- 
+
     HASH_DELETE(hh_q2u, *hh, s);
-   
+
     return;
 }
 
-void print_req_info(struct sockaddr_in *src, struct sockaddr_in *dst, ssize_t len) 
-{    
-    
+void print_req_info(struct sockaddr_in *src, struct sockaddr_in *dst, ssize_t len)
+{
+
     char src_ip[INET_ADDRSTRLEN];
     char dst_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &src->sin_addr.s_addr, src_ip, sizeof(src_ip));
@@ -125,89 +159,95 @@ void print_req_info(struct sockaddr_in *src, struct sockaddr_in *dst, ssize_t le
     return;
 }
 
-session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream) 
+session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream)
 {
     session_t *session = (session_t *) malloc(sizeof(session_t));
     assert(session != NULL);
 
-    gettimeofday(&session->start_tm, NULL); 
-    session->stream = stream; 
+    gettimeofday(&session->start_tm, NULL);
+    session->stream = stream;
     session->stream_id = stream->stream_id;
-    session->conn = stream->conn; 
-    session->stream_active = true; 
-    
-    memcpy(&(session->req), req, sizeof(request_t)); 
+    session->conn = stream->conn;
+    session->stream_active = true;
+
+    memcpy(&(session->req), req, sizeof(request_t));
 
     return session;
-} 
-
+}
 
 void process_udp_packet(char *buf, ssize_t len)
-{ 
-    struct iphdr *iph = (struct iphdr *) buf; 
-    
-    if (iph->protocol != IPPROTO_UDP) { 
+{
+    struct iphdr *iph = (struct iphdr *) buf;
+
+    if (iph->protocol != IPPROTO_UDP) {
         log_warn("tun device received non UDP packets. \n");
         return;
     }
-    
+
     struct udphdr *udph = (struct udphdr *)(buf + iph->ihl * 4);
     struct sockaddr_in src, dst;
-     
+
     src.sin_family = dst.sin_family = AF_INET;
     src.sin_addr.s_addr = iph->saddr;
     src.sin_port = udph->source;
-     
+
     dst.sin_addr.s_addr = iph->daddr;
-    dst.sin_port = udph->dest; 
-  
-    //print the udp headers 
+    dst.sin_port = udph->dest;
+
+    //print the udp headers
     print_req_info(&src, &dst, ntohs(udph->len));
 
-    request_t req; 
-    memcpy(&(req.sa), (void *) &src, sizeof(struct sockaddr_in));
-    memcpy(&(req.da), (void *) &dst, sizeof(struct sockaddr_in));
-    req.protocol = IPPROTO_UDP; 
+    request_t *req = (request_t *) malloc(sizeof(request_t));
+    bzero(req, sizeof(request_t));
+    memcpy(&(req->sa), (void *) &src, sizeof(struct sockaddr_in));
+    memcpy(&(req->da), (void *) &dst, sizeof(struct sockaddr_in));
+    req->protocol = IPPROTO_UDP;
 
-    session_t *session = find_session_u2q(&ht_udp_to_quic, &req); 
+    session_t *session = find_session_u2q(&ht_udp_to_quic, req);
+
+    log_info("session %p . \n", session);
 
     if (!session) {
         quicly_stream_t *stream = NULL;
+        printf("session %p.\n", session);
         int ret = quicly_open_stream(conn, &stream, 0);
-        assert(ret == 0); 
-        session = client_create_udp_session(&req, stream);
+        assert(ret == 0);
+        stream->callbacks = &udp_client_stream_callbacks;
+        session = client_create_udp_session(req, stream);
         assert(session != NULL);
 
         add_to_hash_u2q(&ht_udp_to_quic, session);
-        log_info("ok here.\n");
         add_to_hash_q2u(&ht_quic_to_udp, session);
     }
 
-    assert(session != NULL);  
+    assert(session != NULL);
     assert(session->stream != NULL);
-    //FIXME in the next version, we may use emit to send the UDP packets. 
-    // the following line would write the whole packet including IP header 
-    // into stream 
-    log_info("wring to quicly streambuf %ld, len: %ld.\n", session->stream->stream_id, len);
+    //FIXME in the next version, we may use emit to send the UDP packets.
+    // the following line would write the whole packet including IP header
+    // into stream
+    log_info("writting to quicly streambuf %ld, len: %ld.\n", session->stream->stream_id, len);
     quicly_streambuf_egress_write(session->stream, buf, len);
+
+    if (req)
+       free(req);
 
     return;
 }
 
 void client_tun_read_cb(EV_P_ ev_io *w, int revents)
 {
-    int fd = w->fd; 
-    ssize_t read_bytes = 0, total_read_bytes = 0; 
-    char buf[4096]; 
+    int fd = w->fd;
+    ssize_t read_bytes = 0, total_read_bytes = 0;
+    char buf[4096];
     bzero(buf, sizeof(buf));
- 
-    while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) { 
-        //process readed packets; 
-        process_udp_packet(buf, read_bytes); 
-        total_read_bytes += read_bytes;    
-    } 
 
-    if (read_bytes == 0) { 
+    while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
+        //process readed packets;
+        process_udp_packet(buf, read_bytes);
+        total_read_bytes += read_bytes;
+    }
+
+    if (read_bytes == 0) {
         log_warn("tun device (fd: %d) is closed.\n", fd);
         ev_io_stop(EV_DEFAULT, w);
         close(fd);
@@ -218,15 +258,15 @@ void client_tun_read_cb(EV_P_ ev_io *w, int revents)
         //close tun dev and stop the watcher;
         log_warn("tun device %d read failed with %d, \"%s\". \n",
                     fd, errno, strerror(errno));
-        ev_io_stop(EV_DEFAULT, w); 
+        ev_io_stop(EV_DEFAULT, w);
         close(fd);
     }
-   
+
     return;
 }
 
-int open_tun_dev(const char *devname) 
-{ 
+int open_tun_dev(const char *devname)
+{
     struct ifreq ifr;
     int fd, err;
     if ((fd = open("/dev/net/tun", O_RDWR)) == -1) {
@@ -246,7 +286,7 @@ int open_tun_dev(const char *devname)
     return fd;
 }
 
-int create_udp_raw_socket(int tun_fd) 
+int create_udp_raw_socket(int tun_fd)
 {
     int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 
@@ -267,14 +307,14 @@ int create_udp_raw_socket(int tun_fd)
     return raw_sock;
 }
 
-int run_cpep_udp_server(char *devname) 
-{ 
+int run_cpep_udp_server(char *devname)
+{
     int fd = open_tun_dev(devname);
-    assert(fd > 0);   
+    assert(fd > 0);
 
-    ev_io *tun_read_watcher = (ev_io *) malloc(sizeof(ev_io)); 
+    ev_io *tun_read_watcher = (ev_io *) malloc(sizeof(ev_io));
     ev_io_init(tun_read_watcher, client_tun_read_cb, fd, EV_READ);
-    ev_io_start(EV_DEFAULT, tun_read_watcher); 
+    ev_io_start(EV_DEFAULT, tun_read_watcher);
 
     ev_run(loop, 0);
     return 0;
