@@ -48,6 +48,9 @@ typedef struct session {
     UT_hash_handle hh_u2q;    // use UDP five tuples to find QUIC Stream 
 } session_t;
 
+void print_session_event(session_t *s, const char *fmt, ...)
+          __attribute__((format(printf, 2, 3)));
+
 extern struct ev_loop *loop;
 
 void add_to_hash_t2q(session_t **hh, session_t *s);

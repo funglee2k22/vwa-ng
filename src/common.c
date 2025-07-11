@@ -238,3 +238,16 @@ int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval 
   return x->tv_sec < y->tv_sec;
 }
 
+void print_req_info(struct sockaddr_in *src, struct sockaddr_in *dst, ssize_t len)
+{
+
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &src->sin_addr.s_addr, src_ip, sizeof(src_ip));
+    inet_ntop(AF_INET, &dst->sin_addr.s_addr, dst_ip, sizeof(dst_ip));
+
+    log_info("received UDP packet from %s:%u to %s:%u, udp_len: %ld \n",
+                src_ip, ntohs(src->sin_port), dst_ip, ntohs(dst->sin_port), len);
+    return;
+}
+

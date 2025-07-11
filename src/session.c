@@ -73,6 +73,79 @@ void delete_session_from_q2t(session_t **q2t, session_t *s)
     return;
 }
 
+/*
+ * adding <udp five tuples, quicly_stream *> into hash table,
+ * key is the five tuples.
+ */
+void add_to_hash_u2q(session_t **hh, session_t *s)
+{
+    session_t *r = NULL;
+
+    HASH_FIND(hh_u2q, *hh, &(s->req), sizeof(request_t), r);
+
+    if (!r) {
+        HASH_ADD(hh_u2q, *hh, req, sizeof(request_t), s);
+    } else {
+        HASH_REPLACE(hh_u2q, *hh, req, sizeof(request_t), s, r);
+    }
+    return;
+}
+
+void add_to_hash_q2u(session_t **hh, session_t *s)
+{
+    session_t *r = NULL;
+    quicly_stream_t *stream = s->stream;
+
+    HASH_FIND(hh_q2u, *hh, &stream, sizeof(stream),  r);
+
+    if (!r) {
+        HASH_ADD(hh_q2u, *hh, stream, sizeof(stream), s);
+    } else {
+        HASH_REPLACE(hh_q2u, *hh, stream, sizeof(stream), s, r);
+    }
+    return;
+}
+
+session_t *find_session_u2q(session_t **hh, request_t *req)
+{
+    session_t *r = NULL;
+
+    HASH_FIND(hh_u2q, *hh, req, sizeof(request_t), r);
+
+    return r;
+}
+
+session_t *find_session_q2u(session_t **hh, quicly_stream_t *stream)
+{
+    session_t *r = NULL;
+
+    HASH_FIND(hh_u2q, *hh, &stream, sizeof(stream), r);
+
+    return r;
+}
+
+void delete_session_u2q(session_t **hh, session_t *s)
+{
+    if (!s || !hh)
+        return;
+
+    HASH_DELETE(hh_u2q, *hh, s);
+
+    return;
+}
+
+
+void delete_session_q2u(session_t **hh, session_t *s)
+{
+    if (!s || !hh)
+        return;
+
+    HASH_DELETE(hh_q2u, *hh, s);
+
+    return;
+}
+
+
 void free_ev_watcher(ev_io *w)
 {
     assert(w != NULL);
@@ -83,7 +156,6 @@ void free_ev_watcher(ev_io *w)
     free(w);
     return;
 }
-
 
 void close_tcp_conn(session_t *s)
 {

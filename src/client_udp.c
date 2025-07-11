@@ -40,8 +40,6 @@ extern quicly_conn_t *conn;
 extern quicly_context_t client_ctx;
 extern const quicly_stream_callbacks_t udp_client_stream_callbacks;
 
-
-
 session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream)
 {
     session_t *session = (session_t *) malloc(sizeof(session_t));
@@ -77,9 +75,6 @@ void process_udp_packet(char *buf, ssize_t len)
     dst.sin_addr.s_addr = iph->daddr;
     dst.sin_port = udph->dest;
 
-    //print the udp headers
-    print_req_info(&src, &dst, ntohs(udph->len));
-
     request_t *req = (request_t *) malloc(sizeof(request_t));
     bzero(req, sizeof(request_t));
     memcpy(&(req->sa), (void *) &src, sizeof(struct sockaddr_in));
@@ -88,11 +83,8 @@ void process_udp_packet(char *buf, ssize_t len)
 
     session_t *session = find_session_u2q(&ht_udp_to_quic, req);
 
-    log_info("session %p . \n", session);
-
     if (!session) {
         quicly_stream_t *stream = NULL;
-        printf("session %p.\n", session);
         int ret = quicly_open_stream(conn, &stream, 0);
         assert(ret == 0);
         stream->callbacks = &udp_client_stream_callbacks;

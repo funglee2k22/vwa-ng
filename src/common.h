@@ -25,9 +25,6 @@ int set_non_blocking(int sockfd);
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
     __attribute__((format(printf, 4, 5)));
 
-void print_session_event(session_t *s, const char *fmt, ...)
-    __attribute__((format(printf, 2, 3)));
-
 void print_stream_event(quicly_stream_t *s, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 
