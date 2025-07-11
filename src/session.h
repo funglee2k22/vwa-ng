@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
+#include "common.h"
 #include "uthash.h"
 
 #define APP_BUF_SIZE (1 * 1024 * 1024)
@@ -53,6 +54,14 @@ void add_to_hash_t2q(session_t **hh, session_t *s);
 session_t *find_session_t2q(session_t **hh, int fd);
 void add_to_hash_q2t(session_t **hh, session_t *s);
 session_t *find_session_q2t(session_t **hh, long int stream_id);
+
+void add_to_hash_u2q(session_t **hh, session_t *s);
+void add_to_hash_q2u(session_t **hh, session_t *s);
+session_t *find_session_u2q(session_t **hh, request_t *req);
+session_t *find_session_q2u(session_t **hh, quicly_stream_t *stream);
+void delete_session_u2q(session_t **hh, session_t *s);
+void delete_session_q2u(session_t **hh, session_t *s);
+
 
 void delete_session_init_from_tcp(session_t *s, int errno);
 void delete_session_init_from_quic(session_t *s, quicly_error_t);
