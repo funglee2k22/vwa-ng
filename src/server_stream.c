@@ -93,7 +93,7 @@ session_t *server_process_ctrl_frame(quicly_stream_t *stream)
     }
 
     frame_t *ctrl_frame = (frame_t *) input.base;
-    if (ctrl_frame->type != 1) {
+    if (ctrl_frame->req.protocol != IPPROTO_TCP || ctrl_frame->req.protocol != IPPROTO_UDP) {
          log_warn("stream: %ld received %ld bytes unexpected data.\n", stream->stream_id, input.len);
          return NULL;
     }

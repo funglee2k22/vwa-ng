@@ -307,7 +307,6 @@ session_t *client_create_session(int fd, quicly_stream_t *stream)
 static void inline client_send_ctrl_frame(quicly_stream_t *stream, struct sockaddr_in *sa, struct sockaddr_in *da)
 {
     frame_t ctrl_frame;
-    ctrl_frame.type = 1;
     memcpy(&(ctrl_frame.req.sa), sa, sizeof(struct sockaddr_in));
     memcpy(&(ctrl_frame.req.da), da, sizeof(struct sockaddr_in));
     ctrl_frame.req.protocol = IPPROTO_TCP;

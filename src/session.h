@@ -21,7 +21,6 @@ typedef struct request {
 } request_t;
 
 typedef struct cpep_frame {
-    int type;
     request_t req;
 } frame_t;
 
