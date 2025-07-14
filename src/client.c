@@ -304,18 +304,14 @@ session_t *client_create_session(int fd, quicly_stream_t *stream)
     return session;
 }
 
-static void inline client_send_ctrl_frame(quicly_stream_t *stream, struct sockaddr_in *sa, struct sockaddr_in *da)
+void client_send_meta_data(quicly_stream_t *stream, request_t *req)
 {
-    frame_t ctrl_frame;
-    memcpy(&(ctrl_frame.req.sa), sa, sizeof(struct sockaddr_in));
-    memcpy(&(ctrl_frame.req.da), da, sizeof(struct sockaddr_in));
-    ctrl_frame.req.protocol = IPPROTO_TCP;
+    log_debug("stream %ld send meta data (len %ld)  to server.\n",
+                  stream->stream_id, sizeof(request_t));
 
-    //send clt side session info to server;
-    quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));
+    quicly_streambuf_egress_write(stream, (void *) req, sizeof(request_t));
 
     return;
-
 }
 
 void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
@@ -360,7 +356,8 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
 
     gettimeofday(&session->start_tm, NULL);
     print_session_event(session, "func: %s, line: %d, event: session_created.\n", __func__, __LINE__);
-    client_send_ctrl_frame(stream, &sa, &da);
+
+    client_send_meta_data(stream, &(session->req));
 
     //preparing ev watchers
     ev_io *client_tcp_read_watcher = (ev_io *)malloc(sizeof(ev_io));

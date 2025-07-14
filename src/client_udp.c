@@ -91,6 +91,8 @@ void process_udp_packet(char *buf, ssize_t len)
         session = client_create_udp_session(req, stream);
         assert(session != NULL);
 
+        client_send_meta_data(stream, req);
+
         add_to_hash_u2q(&ht_udp_to_quic, session);
         add_to_hash_q2u(&ht_quic_to_udp, session);
     }

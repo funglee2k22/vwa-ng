@@ -20,10 +20,6 @@ typedef struct request {
     u_int8_t protocol;       // protocol IPPROTO_UDP or IPPROTO_TCP
 } request_t;
 
-typedef struct cpep_frame {
-    request_t req;
-} frame_t;
-
 typedef struct session {
     struct timeval start_tm;
     bool first_read_quic;
