@@ -37,12 +37,12 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
     server_clean_up_init_from_quic(stream, err);
 }
 
-session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
+session_t *create_session(quicly_stream_t *stream, request_t *req)
 {
     long int stream_id = stream->stream_id;
     session_t *ns = (session_t *) malloc(sizeof(session_t));
     bzero(ns, sizeof(session_t));
-    memcpy(&(ns->req), &(ctrl_frame->req), sizeof(request_t));
+    memcpy(&(ns->req), req, sizeof(request_t));
 
     struct sockaddr_in *da = (struct sockaddr_in *) &(ns->req.da);
     struct sockaddr_in *sa = (struct sockaddr_in *) &(ns->req.sa);
@@ -82,23 +82,23 @@ session_t *create_session(quicly_stream_t *stream, frame_t *ctrl_frame)
     return ns;
 };
 
-session_t *server_process_ctrl_frame(quicly_stream_t *stream)
+session_t *server_process_meta_data(quicly_stream_t *stream)
 {
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
 
-    if (input.len < sizeof(frame_t)) {
+    if (input.len < sizeof(request_t)) {
         log_warn("stream %ld, recv data %ld bytes not enough to create session_t (%ld bytes).\n",
-                       stream->stream_id, input.len, sizeof(frame_t));
+                       stream->stream_id, input.len, sizeof(request_t));
         return NULL;
     }
 
-    frame_t *ctrl_frame = (frame_t *) input.base;
-    if (ctrl_frame->req.protocol != IPPROTO_TCP || ctrl_frame->req.protocol != IPPROTO_UDP) {
+    request_t *req = (request_t *) input.base;
+    if (req->protocol != IPPROTO_TCP && req->protocol != IPPROTO_UDP) {
          log_warn("stream: %ld received %ld bytes unexpected data.\n", stream->stream_id, input.len);
          return NULL;
     }
 
-    session_t *s = create_session(stream, ctrl_frame);
+    session_t *s = create_session(stream, req);
     if (!s) {
         log_warn("stream: %ld could not create session.\n", stream->stream_id);
         return NULL;
@@ -113,10 +113,10 @@ session_t *server_process_ctrl_frame(quicly_stream_t *stream)
     log_info("session quic: %ld <-> tcp: %d  (%s -> %s) created.\n",
             s->stream_id, s->fd, str_src, str_dst);
 
-    if (input.len - sizeof(frame_t) > 0)
-        quicly_streambuf_ingress_shift(stream, sizeof(frame_t));
+    if (input.len - sizeof(request_t) > 0)
+        quicly_streambuf_ingress_shift(stream, sizeof(request_t));
     else
-        quicly_stream_sync_recvbuf(stream, sizeof(frame_t));
+        quicly_stream_sync_recvbuf(stream, sizeof(request_t));
 
     return s;
 
@@ -136,7 +136,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     if (!s) {
         //it might be a new session.
-        s = server_process_ctrl_frame(stream);
+        s = server_process_meta_data(stream);
         if (!s) {
             log_warn("stream: %ld received %ld bytes, but could not create a new session.\n",
                          stream->stream_id, len);
