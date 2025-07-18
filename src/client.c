@@ -33,7 +33,7 @@ static int64_t connect_time = 0;
 static ptls_iovec_t resumption_token;
 
 struct ev_loop *loop = NULL;
-session_t *ht_quic_to_tcp = NULL;
+session_t *ht_quic_to_flow = NULL;
 session_t *ht_tcp_to_quic = NULL;
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
@@ -352,7 +352,7 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     session->req.protocol = IPPROTO_TCP;
 
     add_to_hash_t2q(&ht_tcp_to_quic, session);
-    add_to_hash_q2t(&ht_quic_to_tcp, session);
+    add_to_hash_q2f(&ht_quic_to_flow, session);
 
     gettimeofday(&session->start_tm, NULL);
     print_session_event(session, "func: %s, line: %d, event: session_created.\n", __func__, __LINE__);

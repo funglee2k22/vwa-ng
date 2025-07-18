@@ -23,9 +23,14 @@ target_compile_options(new-clt PRIVATE
 )
 
 
-add_executable(new-srv src/uthash.h src/common.h src/common.c src/server.h
-            src/session.h src/session.c
-                src/server_stream.h src/server_stream.c src/server.c)
+add_executable(new-srv
+               src/uthash.h
+               src/common.h src/common.c
+               src/session.h src/session.c
+               src/server.h src/server.c
+               src/server_stream.h src/server_stream.c
+               src/server_udp.h src/server_udp.c
+               src/server_udp_stream.h src/server_udp_stream.c)
 target_link_libraries(new-srv PRIVATE quicly ev picotls)
 target_compile_definitions(new-srv PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(new-srv PRIVATE

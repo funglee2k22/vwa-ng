@@ -1,14 +1,36 @@
 #include "common.h"
 
+#include <arpa/inet.h>
+#include <ev.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/time.h>
+#include <float.h>
+#include <getopt.h>
+#include <linux/if.h>
+#include <linux/if_tun.h>
 #include <math.h>
+#include <memory.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netdb.h>
-#include <memory.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <quicly.h>
+#include <quicly/defaults.h>
+#include <quicly/streambuf.h>
+#include <picotls/../../t/util.h>
 #include <picotls/openssl.h>
-#include <errno.h>
+
 
 ptls_context_t *get_tlsctx()
 {
@@ -251,3 +273,45 @@ void print_req_info(struct sockaddr_in *src, struct sockaddr_in *dst, ssize_t le
     return;
 }
 
+int open_tun_dev(const char *devname)
+{
+    struct ifreq ifr;
+    int fd, err;
+    if ((fd = open("/dev/net/tun", O_RDWR)) == -1) {
+        perror("open /dev/net/tun");
+        exit(1);
+    }
+    memset(&ifr, 0, sizeof(ifr));
+    ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+    strncpy(ifr.ifr_name, devname, IFNAMSIZ);
+
+    if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr)) == -1) {
+        perror("ioctl TUNSETIFF");
+        close(fd);
+        exit(1);
+    }
+
+    return fd;
+}
+
+
+int create_udp_raw_socket(int tun_fd)
+{
+    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+
+    if (raw_sock < 0) {
+        perror("socket(AF_INET, SOCK_RAW)");
+        close(tun_fd);
+        exit(1);
+    }
+
+    int on = 1;
+    if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) < 0) {
+        perror("setsockopt(IP_HDRINCL)");
+        close(tun_fd);
+        close(raw_sock);
+        exit(1);
+    }
+
+    return raw_sock;
+}

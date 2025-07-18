@@ -33,8 +33,8 @@
 #include <picotls/../../t/util.h>
 
 
-session_t *ht_quic_to_udp = NULL;
 session_t *ht_udp_to_quic = NULL;
+extern session_t *ht_quic_to_flow;
 extern int client_quic_socket;
 extern quicly_conn_t *conn;
 extern quicly_context_t client_ctx;
@@ -94,7 +94,7 @@ void process_udp_packet(char *buf, ssize_t len)
         client_send_meta_data(stream, req);
 
         add_to_hash_u2q(&ht_udp_to_quic, session);
-        add_to_hash_q2u(&ht_quic_to_udp, session);
+        add_to_hash_q2f(&ht_quic_to_flow, session);
     }
 
     assert(session != NULL);
@@ -142,46 +142,24 @@ void client_tun_read_cb(EV_P_ ev_io *w, int revents)
     return;
 }
 
-int open_tun_dev(const char *devname)
+int create_udp_connection(struct sockaddr_in *dst)
 {
-    struct ifreq ifr;
-    int fd, err;
-    if ((fd = open("/dev/net/tun", O_RDWR)) == -1) {
-        perror("open /dev/net/tun");
-        exit(1);
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        perror("socket(SOCK_DGRAM)");
+        return -1;
     }
-    memset(&ifr, 0, sizeof(ifr));
-    ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
-    strncpy(ifr.ifr_name, devname, IFNAMSIZ);
 
-    if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr)) == -1) {
-        perror("ioctl TUNSETIFF");
-        close(fd);
-        exit(1);
+    set_non_blocking(fd);
+
+    if (connect(fd, (struct sockaddr *)dst, sizeof(struct sockaddr_in)) < 0) {
+        log_warn("udp fd %d connected with server %s:%d failed w/ %d, \"%s\".\n",
+                     fd, inet_ntoa(dst->sin_addr), htons(dst->sin_port),
+                     errno, strerror(errno));
+        return -1;
     }
 
     return fd;
-}
-
-int create_udp_raw_socket(int tun_fd)
-{
-    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-
-    if (raw_sock < 0) {
-        perror("socket(AF_INET, SOCK_RAW)");
-        close(tun_fd);
-        return 1;
-    }
-
-    int on = 1;
-    if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) < 0) {
-        perror("setsockopt(IP_HDRINCL)");
-        close(tun_fd);
-        close(raw_sock);
-        return 1;
-    }
-
-    return raw_sock;
 }
 
 int run_cpep_udp_server(char *devname)

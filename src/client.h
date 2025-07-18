@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include "common.h"
 
-#define USE_EV_EVENT_FEED
 
 void quit_client();
 void client_cleanup(int fd);

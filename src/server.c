@@ -1,5 +1,7 @@
 ﻿#include "server.h"
 #include "server_stream.h"
+#include "server_udp.h"
+#include "server_udp_stream.h"
 #include "common.h"
 
 #include <stdio.h>
@@ -15,17 +17,21 @@
 #include <picotls/openssl.h>
 #include <picotls/../../t/util.h>
 
-static quicly_conn_t **conns;
-static int udp_server_socket = -1;
+quicly_conn_t **conns;
+int udp_server_socket = -1;
+
+int server_udp_tun_fd = -1;
+int server_udp_raw_fd = -1;
+
 static quicly_context_t server_ctx;
-//static int server_socket;
 static size_t num_conns = 0;
 static ev_timer server_timeout;
 static quicly_cid_plaintext_t next_cid;
 struct ev_loop *loop = NULL;
 
 session_t *ht_tcp_to_quic = NULL;
-session_t *ht_quic_to_tcp = NULL;
+session_t *ht_udp_to_quic = NULL;
+session_t *ht_quic_to_flow = NULL;  //both udp and tcp session are in this hashtab, and quicly_stream_t * is hash key.
 
 
 static int udp_listen(struct addrinfo *addr)
@@ -228,6 +234,7 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
     return server_socket;
 }
 
+
 int main(int argc, char** argv)
 {
     int port = 4433;
@@ -235,28 +242,35 @@ int main(int argc, char** argv)
     const char *logfile = NULL;
     const char *keyfile = "server.key";
     const char *certfile = "server.crt";
+    const char *tun_dev = "tun0";
 
     char port_char[16];
     snprintf(port_char, sizeof(port_char), "%d", port);
 
     udp_server_socket = srv_setup_quic_listener(address, port_char, keyfile, certfile);
+    assert(udp_server_socket > 0);
+
+    //raw socket only used to send UDP packets to remote ISP servers.
+    server_udp_tun_fd = open_tun_dev(tun_dev);
+    assert(server_udp_tun_fd > 0);
+
+    server_udp_raw_fd = create_udp_raw_socket(server_udp_tun_fd);
+    assert(server_udp_raw_fd > 0);
+
+    set_non_blocking(udp_server_socket);
+    set_non_blocking(server_udp_raw_fd);
+    set_non_blocking(server_udp_tun_fd);
 
     signal(SIGPIPE, SIG_IGN);
-
     loop = EV_DEFAULT;
 
     ev_io udp_read_watcher;
     ev_io_init(&udp_read_watcher, &server_udp_read_cb, udp_server_socket, EV_READ);
     ev_io_start(loop, &udp_read_watcher);
 
-#if 0
-    /* due to high CPU usage on UDP socket w/ EV_WRITE event handler, we decide to use
-     * timer to handle UDP writes.
-     */
-    ev_io udp_write_watcher;
-    ev_io_init(&udp_write_watcher, &server_udp_write_cb, udp_server_socket, EV_WRITE);
-    ev_io_start(loop, &udp_write_watcher);
-#endif
+    ev_io udp_tun_reader;
+    ev_io_init(&udp_tun_reader, &server_tun_read_cb, server_udp_tun_fd, EV_READ);
+    ev_io_start(loop, &udp_tun_reader);
 
     ev_timer_init(&server_timeout, &server_timeout_cb, 2., 0.0);
     ev_timer_start(EV_DEFAULT, &server_timeout);

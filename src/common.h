@@ -1,12 +1,12 @@
 #pragma once
 
 #include "uthash.h"
-#include "session.h" 
+#include "session.h"
 
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syslog.h> 
+#include <syslog.h>
 #include <quicly.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,6 +14,10 @@
 #include <sys/syscall.h>
 
 #define SOCK_READ_BUF_SIZE   4096
+
+int open_tun_dev(const char *devname);
+
+int create_udp_raw_socket(int tun_fd);
 
 ptls_context_t *get_tlsctx();
 

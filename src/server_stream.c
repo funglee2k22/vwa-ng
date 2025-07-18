@@ -1,5 +1,6 @@
 #include "server.h"
 #include "server_stream.h"
+#include "server_udp_stream.h"
 #include "common.h"
 #include "uthash.h"
 
@@ -9,7 +10,7 @@
 #include <quicly/streambuf.h>
 
 extern session_t *ht_tcp_to_quic;
-extern session_t *ht_quic_to_tcp;
+extern session_t *ht_quic_to_flow;
 
 extern struct ev_loop *loop;
 
@@ -19,7 +20,7 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents);
 
 void server_clean_up_init_from_quic(quicly_stream_t *stream, quicly_error_t err)
 {
-    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream->stream_id);
+    session_t *s = find_session_q2f(&ht_quic_to_flow, stream);
 
     if (!s) {
         terminate_quic_stream(stream, err);
@@ -37,7 +38,7 @@ static void server_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
     server_clean_up_init_from_quic(stream, err);
 }
 
-session_t *create_session(quicly_stream_t *stream, request_t *req)
+session_t *create_tcp_session(quicly_stream_t *stream, request_t *req)
 {
     long int stream_id = stream->stream_id;
     session_t *ns = (session_t *) malloc(sizeof(session_t));
@@ -65,7 +66,7 @@ session_t *create_session(quicly_stream_t *stream, request_t *req)
 
     //add session into hashtables
     add_to_hash_t2q(&ht_tcp_to_quic, ns);
-    add_to_hash_q2t(&ht_quic_to_tcp, ns);
+    add_to_hash_q2f(&ht_quic_to_flow, ns);
 
     //add socket read watcher
     ev_io *socket_read_watcher = (ev_io *)malloc(sizeof(ev_io));
@@ -82,89 +83,28 @@ session_t *create_session(quicly_stream_t *stream, request_t *req)
     return ns;
 };
 
-session_t *server_process_meta_data(quicly_stream_t *stream)
+
+static void server_stream_tcp_receive(session_t *s)
 {
-    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-
-    if (input.len < sizeof(request_t)) {
-        log_warn("stream %ld, recv data %ld bytes not enough to create session_t (%ld bytes).\n",
-                       stream->stream_id, input.len, sizeof(request_t));
-        return NULL;
-    }
-
-    request_t *req = (request_t *) input.base;
-    if (req->protocol != IPPROTO_TCP && req->protocol != IPPROTO_UDP) {
-         log_warn("stream: %ld received %ld bytes unexpected data.\n", stream->stream_id, input.len);
-         return NULL;
-    }
-
-    session_t *s = create_session(stream, req);
-    if (!s) {
-        log_warn("stream: %ld could not create session.\n", stream->stream_id);
-        return NULL;
-    }
-
-    s->tcp_active = s->stream_active = s->ctrl_frame_received = true;
-
-    char str_src[128], str_dst[128];
-    snprintf(str_src, sizeof(str_src), "%s:%d", inet_ntoa(s->req.sa.sin_addr), ntohs(s->req.sa.sin_port));
-    snprintf(str_dst, sizeof(str_dst), "%s:%d", inet_ntoa(s->req.da.sin_addr), ntohs(s->req.da.sin_port));
-
-    log_info("session quic: %ld <-> tcp: %d  (%s -> %s) created.\n",
-            s->stream_id, s->fd, str_src, str_dst);
-
-    if (input.len - sizeof(request_t) > 0)
-        quicly_streambuf_ingress_shift(stream, sizeof(request_t));
-    else
-        quicly_stream_sync_recvbuf(stream, sizeof(request_t));
-
-    return s;
-
-}
-
-static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
-{
-    if (len == 0)
-        return;
-
-    /* read input to receive buffer */
-    if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
-        return;
-
-    long int stream_id = stream->stream_id;
-    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream_id);
-
-    if (!s) {
-        //it might be a new session.
-        s = server_process_meta_data(stream);
-        if (!s) {
-            log_warn("stream: %ld received %ld bytes, but could not create a new session.\n",
-                         stream->stream_id, len);
-            quicly_stream_sync_recvbuf(stream, len);
-            return;
-        }
-    }
-
     assert(s != NULL);
-
-    if (!s->tcp_active) {
-        log_error("stream %ld received %ld bytes, but remote tcp conn. might be closed.\n", stream_id, len);
-        quicly_stream_sync_recvbuf(stream, len);
-        return;
-    }
+    quicly_stream_t *stream = s->stream;
 
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
     if (input.len == 0) {
-        //log_warn("stream %ld quicly_streambuf_ingress_get return input.len: %ld bytes.\n",
-        //                stream->stream_id, input.len);
         return;
     }
+
+    if (!s->tcp_active) {
+        log_error("stream %ld received data, but remote tcp conn. might be closed.\n",
+                           stream->stream_id);
+        quicly_stream_sync_recvbuf(stream, input.len);
+        return;
+    }
+
     log_debug("stream: %ld recv buff has %ld bytes available.\n", stream->stream_id, input.len);
 
     ssize_t bytes_sent = -1, total_bytes_sent = 0;
-    log_debug("stream %ld, off: %ld, len: %ld, total_bytes_sent: %ld, input.len: %ld\n",
-                     stream->stream_id, off, len, total_bytes_sent, input.len);
 
     while ((bytes_sent = write(s->fd, input.base, input.len)) > 0 ) {
         input.base += bytes_sent;
@@ -174,8 +114,8 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             break;
     }
 
-    log_debug("stream %ld, off: %ld, len: %ld, total_bytes_sent: %ld, input.len: %ld\n",
-                     stream->stream_id, off, len, total_bytes_sent, input.len);
+    log_debug("stream %ld, total_bytes_sent: %ld, input.len: %ld\n",
+                     stream->stream_id, total_bytes_sent, input.len);
 
     if (total_bytes_sent > 0) {
          if (input.len > 0)
@@ -202,6 +142,84 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     return;
 
+}
+
+
+session_t *create_new_session(quicly_stream_t *stream)
+{
+    ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
+
+    if (input.len < sizeof(request_t)) {
+         log_error("stream %ld received %ld bytes which is not ctrl_frame or request.\n",
+                        stream->stream_id, input.len);
+         return NULL;
+    }
+
+    request_t *req = (request_t *) input.base;
+
+    if (req->protocol != IPPROTO_TCP && req->protocol != IPPROTO_UDP) {
+         log_error("stream %ld received %ld bytes which is not a valid request (proto: %d).\n",
+                        stream->stream_id, input.len, req->protocol);
+         return NULL;
+    }
+
+    session_t *ns = NULL;
+
+    if (req->protocol == IPPROTO_TCP) {
+        ns = create_tcp_session(stream, req);
+    } else {
+        //req->protocol == IPPROTO_UDP
+        ns = create_udp_session(stream, req);
+    }
+
+    input.len -= sizeof(request_t);
+
+    if (input.len > 0)
+        quicly_streambuf_ingress_shift(stream, sizeof(request_t));
+    else
+        quicly_stream_sync_recvbuf(stream, sizeof(request_t));
+
+    return ns;
+}
+
+static void server_stream_receive(quicly_stream_t *stream, size_t off, const void *src, size_t len)
+{
+    if (len == 0)
+        return;
+
+    log_info("stream %ld received %ld bytes.\n", stream->stream_id, len);
+
+    /* read input to receive buffer */
+    if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
+        return;
+
+    session_t *session = find_session_q2f(&ht_quic_to_flow, stream);
+
+    if (!session) { // might be new session.
+        session = create_new_session(stream);
+        if (!session) {
+            log_warn("stream: %ld received %ld bytes, but could not create a new session.\n",
+                         stream->stream_id, len);
+            quicly_stream_sync_recvbuf(stream, len);
+            return;
+        }
+    }
+
+    assert(session != NULL);
+
+    if (session->req.protocol == IPPROTO_TCP) {
+        //note, input already in stream's receive buf.
+        server_stream_tcp_receive(session);
+    } else if (session->req.protocol == IPPROTO_UDP) {
+        //for udp flows.  quicly stream carries the whole ip pts incl. iphdr.
+        server_stream_udp_receive(session);
+    } else {
+        //should not reach here.
+        log_error("stream %ld session %p has unsported protocol %d.\n",
+                   stream->stream_id, session, session->req.protocol);
+    }
+
+    return;
 }
 
 int create_tcp_connection(struct sockaddr *sa)
@@ -291,8 +309,6 @@ void server_tcp_write_cb(EV_P_ ev_io *w, int revents)
         }
     }
 
-
-
     return;
 }
 
@@ -353,7 +369,7 @@ static void server_ctrl_stream_receive(quicly_stream_t *stream, size_t off, cons
 
     /* obtain contiguous bytes from the receive buffer */
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
-    log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
+    //log_debug("ctrl stream %ld, recv: %.*s\n", stream->stream_id, (int) input.len, (char *) input.base);
     quicly_stream_sync_recvbuf(stream, len);
 
     const char *msg = "Server received and reply PONG!\n";
