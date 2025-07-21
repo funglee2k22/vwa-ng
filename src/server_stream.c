@@ -174,6 +174,9 @@ session_t *create_new_session(quicly_stream_t *stream)
 
     input.len -= sizeof(request_t);
 
+    log_info("stream %ld, consumed %ld bytes and  %ld bytes in receive buf. \n",
+                  stream->stream_id, sizeof(request_t), input.len);
+
     if (input.len > 0)
         quicly_streambuf_ingress_shift(stream, sizeof(request_t));
     else

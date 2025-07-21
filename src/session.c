@@ -106,8 +106,6 @@ void add_to_hash_u2q(session_t **hh, session_t *s)
     if (!r) {
         log_error("here.\n");
     }
-    printf("adding key -> session\n");
-    dump_request(&key);
 
     r = find_session_u2q(hh, &key);
 

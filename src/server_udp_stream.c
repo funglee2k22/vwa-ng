@@ -54,32 +54,61 @@ void server_stream_udp_receive(session_t *session)
                 stream->stream_id, input.len);
 
     int raw_sock = session->fd;
-    ssize_t bytes_sent = -1;
+    ssize_t bytes_sent = -1, total_bytes_sent = 0;
     struct sockaddr_in dest;
     bzero(&dest, sizeof(dest));
     dest.sin_family = AF_INET;
     dest.sin_addr.s_addr = session->req.da.sin_addr.s_addr;
     dest.sin_port = session->req.da.sin_port;
 
+    do {
+       struct iphdr *iph = (struct iphdr *) (input.base);
+       ssize_t ip_total_len = ntohs(iph->tot_len);
 
-    struct iphdr *iph = (struct iphdr *) (input.base);
-    ssize_t ip_total_len = ntohs(iph->tot_len);
+      if (ip_total_len > input.len) {
+          log_warn("stream %ld only have %ld bytes in its buffer while the ip total length %ld bytes.\n",
+                     stream->stream_id, input.len, ip_total_len);
+          break;
+      }
 
-    log_info("raw sock %d is going to send %ld bytes to %s:%d. \n", raw_sock,
-                   ip_total_len, inet_ntoa(dest.sin_addr), ntohs(dest.sin_port));
+      bytes_sent = sendto(raw_sock, iph, ip_total_len, 0, (struct sockaddr *)&dest, sizeof(dest));
 
-    bytes_sent = sendto(raw_sock, iph, ip_total_len, 0, (struct sockaddr *)&dest, sizeof(dest));
-
-    if (bytes_sent < 0) {
-        log_error("stream id %ld write %ld bytes to raw_sock %d failed w/ errno %d, \"%s\".\n",
+      if (bytes_sent < 0) {
+          log_error("stream id %ld write %ld bytes to raw_sock %d failed w/ errno %d, \"%s\".\n",
                      stream->stream_id, input.len, raw_sock, errno, strerror(errno));
-        //raw socket should be leave open
-        return;
+          //raw socket should be leave open
+          break;
+      }
+
+      if (bytes_sent < ip_total_len) {
+          log_error("stream %ld writes partial packets (%ld of %ld bytes) into raw socket %d.\n",
+                      stream->stream_id, bytes_sent, ip_total_len, raw_sock);
+          //because of no retransmission,  we only gives warning here.
+      }
+
+      total_bytes_sent += ip_total_len;
+      input.base += ip_total_len;
+      input.len -= ip_total_len;
+
+    } while (input.len > 0);
+
+    if (total_bytes_sent > 0) {
+        if (input.len > 0)
+            quicly_streambuf_ingress_shift(stream, total_bytes_sent);
+        else
+            quicly_stream_sync_recvbuf(stream, total_bytes_sent);
+        log_info("stream %ld wrote %ld bytes to %s:%d through raw sock %d.\n",
+                    stream->stream_id, total_bytes_sent, inet_ntoa(dest.sin_addr),
+                    ntohs(dest.sin_port), raw_sock);
+
     }
 
-    log_info("raw sock %d sent %ld bytes packets (input.len %ld). \n", raw_sock, bytes_sent, input.len);
-
-    quicly_stream_sync_recvbuf(stream, input.len);
+    if (bytes_sent < 0) {
+        if (errno != EAGAIN) {
+          log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
+                     stream->stream_id, raw_sock, errno, strerror(errno));
+        }
+    }
 
     return;
 }

@@ -54,10 +54,10 @@ void server_process_udp_packet(char *buf, ssize_t len)
     req->protocol = IPPROTO_UDP;
 
     session_t *session = find_session_u2q(&ht_udp_to_quic, req);
+    char src_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &iph->saddr, src_ip, sizeof(src_ip));
 
     if (!session) {
-        char src_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &iph->saddr, src_ip, sizeof(src_ip));
         log_error("received %ld bytes from %s:%d, but could not find stream to write.\n",
                len, src_ip, ntohs(udph->source));
         free(req);
@@ -66,7 +66,9 @@ void server_process_udp_packet(char *buf, ssize_t len)
 
     quicly_stream_t *stream = session->stream;
 
-    log_debug("writting to quicly streambuf %ld, len: %ld.\n", session->stream->stream_id, len);
+    log_info("udp %s:%d writting to quicly stream %ld, len: %ld.\n",
+              src_ip, ntohs(udph->source),
+              session->stream->stream_id, len);
     quicly_streambuf_egress_write(session->stream, buf, len);
 
     free(req);
