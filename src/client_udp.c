@@ -36,6 +36,7 @@
 session_t *ht_udp_to_quic = NULL;
 extern session_t *ht_quic_to_flow;
 extern int client_quic_socket;
+extern int client_udp_raw_fd;
 extern quicly_conn_t *conn;
 extern quicly_context_t client_ctx;
 extern const quicly_stream_callbacks_t udp_client_stream_callbacks;
@@ -56,7 +57,7 @@ session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream)
     return session;
 }
 
-void process_udp_packet(char *buf, ssize_t len)
+void process_udp_packet(int fd, char *buf, ssize_t len)
 {
     struct iphdr *iph = (struct iphdr *) buf;
 
@@ -92,6 +93,7 @@ void process_udp_packet(char *buf, ssize_t len)
         assert(session != NULL);
 
         client_send_meta_data(stream, req);
+        session->raw_udp_fd = client_udp_raw_fd;
 
         add_to_hash_u2q(&ht_udp_to_quic, session);
         add_to_hash_q2f(&ht_quic_to_flow, session);
@@ -120,7 +122,7 @@ void client_tun_read_cb(EV_P_ ev_io *w, int revents)
 
     while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
         //process readed packets;
-        process_udp_packet(buf, read_bytes);
+        process_udp_packet(fd, buf, read_bytes);
         total_read_bytes += read_bytes;
     }
 
