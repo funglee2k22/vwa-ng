@@ -144,7 +144,6 @@ static void server_stream_tcp_receive(session_t *s)
 
 }
 
-
 session_t *create_new_session(quicly_stream_t *stream)
 {
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);

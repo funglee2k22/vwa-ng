@@ -81,10 +81,14 @@ void server_tun_read_cb(EV_P_ ev_io *w, int revents)
     ssize_t read_bytes = 0, total_read_bytes = 0;
     char buf[4096];
     bzero(buf, sizeof(buf));
-
+    struct iphdr *iph = (struct iphdr *) buf;
     while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
         //process readed packets;
-        server_process_udp_packet(buf, read_bytes);
+        ssize_t ip_total_len = ntohs(iph->tot_len);
+        if (ip_total_len < read_bytes)
+            log_info("tun device read pkt with padding, %ld bytes, actual %ld.\n", read_bytes, ip_total_len);
+        assert(ip_total_len <= read_bytes);
+        server_process_udp_packet(buf, ip_total_len);
         total_read_bytes += read_bytes;
     }
 
