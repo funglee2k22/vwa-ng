@@ -68,6 +68,8 @@ void process_udp_packet(int fd, char *buf, ssize_t len)
 
     struct udphdr *udph = (struct udphdr *)(buf + iph->ihl * 4);
     struct sockaddr_in src, dst;
+    bzero(&src, sizeof(src));
+    bzero(&dst, sizeof(dst));
 
     src.sin_family = dst.sin_family = AF_INET;
     src.sin_addr.s_addr = iph->saddr;
@@ -119,10 +121,15 @@ void client_tun_read_cb(EV_P_ ev_io *w, int revents)
     ssize_t read_bytes = 0, total_read_bytes = 0;
     char buf[4096];
     bzero(buf, sizeof(buf));
+    struct iphdr *iph = (struct iphdr *) buf;
 
     while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
         //process readed packets;
-        process_udp_packet(fd, buf, read_bytes);
+        ssize_t ip_total_len = ntohs(iph->tot_len);
+        if (ip_total_len < read_bytes)
+            log_info("tun device read pkt with padding, %ld bytes, actual %ld.\n", read_bytes, ip_total_len);
+        assert(ip_total_len <= read_bytes);
+        process_udp_packet(fd, buf, ip_total_len);
         total_read_bytes += read_bytes;
     }
 
@@ -133,12 +140,18 @@ void client_tun_read_cb(EV_P_ ev_io *w, int revents)
         return;
     }
 
-    if (read_bytes < 0 && errno != EAGAIN) {
-        //close tun dev and stop the watcher;
-        log_warn("tun device %d read failed with %d, \"%s\". \n",
-                    fd, errno, strerror(errno));
-        ev_io_stop(EV_DEFAULT, w);
-        close(fd);
+    if (read_bytes < 0) {
+        if (errno != EAGAIN) {
+             //close tun dev and stop the watcher;
+             log_warn("tun device %d read failed with %d, \"%s\". \n",
+                           fd, errno, strerror(errno));
+             ev_io_stop(EV_DEFAULT, w);
+             close(fd);
+        } else {
+             log_warn("tun device %d read failed with %d, \"%s\". \n",
+                           fd, errno, strerror(errno));
+             //read failure.
+        }
     }
 
     return;

@@ -70,14 +70,15 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
     }
 
     int raw_sock = session->raw_udp_fd;
-
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);
 
     if (input.len == 0) {
         return;
     }
 
-    ssize_t bytes_sent = -1, total_bytes_sent = 0;
+    log_info("stream %ld has %ld bytes available. \n", stream->stream_id, input.len);
+
+    ssize_t bytes_sent = 0, total_bytes_sent = 0;
     struct sockaddr_in dst_addr;
     bzero(&dst_addr, sizeof(dst_addr));
     dst_addr.sin_family = AF_INET;
@@ -96,6 +97,8 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
 
         bytes_sent  = sendto(raw_sock, input.base, ip_total_len, 0, (struct sockaddr *)&dst_addr, sizeof(dst_addr));
 
+        log_info("stream %ld sent over raw sock %d,  %ld bytes of a %ld bytes pkts.\n", stream->stream_id, raw_sock, bytes_sent, ip_total_len);
+
         if (bytes_sent < 0) {
             log_error("stream id %ld write %ld bytes to raw_sock %d failed w/ errno %d, \"%s\".\n",
                      stream->stream_id, input.len, raw_sock, errno, strerror(errno));
@@ -112,6 +115,7 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
         total_bytes_sent += ip_total_len;
         input.base += ip_total_len;
         input.len -= ip_total_len;
+
     } while (input.len > 0);
 
     if (total_bytes_sent > 0) {
@@ -127,7 +131,10 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
 
     if (bytes_sent < 0) {
         if (errno != EAGAIN) {
-          log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
+            log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
+                     stream->stream_id, raw_sock, errno, strerror(errno));
+        } else {
+            log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
                      stream->stream_id, raw_sock, errno, strerror(errno));
         }
     }
