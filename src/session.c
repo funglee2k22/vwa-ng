@@ -42,12 +42,14 @@ void add_to_hash_q2f(session_t **hh, session_t *s)
 {
      session_t *t = NULL;
      quicly_stream_t *stream = s->stream;
+     long int stream_id = stream->stream_id;
+     s->stream_id = stream_id;
 
-     HASH_FIND(hh_q2f, *hh, &stream, sizeof(stream), t);
+     HASH_FIND(hh_q2f, *hh, &stream_id, sizeof(stream_id), t);
      if (t == NULL) {
-        HASH_ADD(hh_q2f, *hh, stream, sizeof(stream), s);
+        HASH_ADD(hh_q2f, *hh, stream_id, sizeof(stream_id), s);
      } else {
-        HASH_REPLACE(hh_q2f, *hh, stream, sizeof(stream), s, t);
+        HASH_REPLACE(hh_q2f, *hh, stream_id, sizeof(stream_id), s, t);
      }
      return;
 }
@@ -55,8 +57,9 @@ void add_to_hash_q2f(session_t **hh, session_t *s)
 session_t *find_session_q2f(session_t **hh, quicly_stream_t *stream)
 {
     session_t *r = NULL;
+    long int stream_id = stream->stream_id;
 
-    HASH_FIND(hh_q2f, *hh, &stream, sizeof(stream), r);
+    HASH_FIND(hh_q2f, *hh, &stream_id, sizeof(stream_id), r);
 
     return r;
 }

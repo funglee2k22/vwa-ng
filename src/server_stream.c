@@ -196,7 +196,10 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
 
+
     session_t *session = find_session_q2f(&ht_quic_to_flow, stream);
+
+    log_info("find session %p, created for stream %ld, %p \n", session,  stream->stream_id, stream);
 
     if (!session) { // might be new session.
         session = create_new_session(stream);
@@ -206,6 +209,8 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             quicly_stream_sync_recvbuf(stream, len);
             return;
         }
+
+        log_info("session %p created for stream %ld, %p \n", session, stream->stream_id, stream);
     }
 
     assert(session != NULL);

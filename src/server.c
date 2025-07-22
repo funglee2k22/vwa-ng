@@ -255,6 +255,7 @@ int main(int argc, char** argv)
     assert(server_udp_tun_fd > 0);
 
     server_udp_raw_fd = create_udp_raw_socket(server_udp_tun_fd);
+    log_info("raw udp sock %d created.\n", server_udp_raw_fd);
     assert(server_udp_raw_fd > 0);
 
     set_non_blocking(udp_server_socket);
