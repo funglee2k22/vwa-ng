@@ -41,6 +41,8 @@ extern quicly_conn_t *conn;
 extern quicly_context_t client_ctx;
 extern const quicly_stream_callbacks_t udp_client_stream_callbacks;
 
+extern ssize_t streambuf_high_watermarker;
+
 session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream)
 {
     session_t *session = (session_t *) malloc(sizeof(session_t));
@@ -106,8 +108,22 @@ void process_udp_packet(int fd, char *buf, ssize_t len)
     //FIXME in the next version, we may use emit to send the UDP packets.
     // the following line would write the whole packet including IP header
     // into stream
-    log_info("writting to quicly streambuf %ld, len: %ld.\n", session->stream->stream_id, len);
-    quicly_streambuf_egress_write(session->stream, buf, len);
+    quicly_stream_t *stream = session->stream;
+    log_debug("writting to quicly streambuf %ld, len: %ld.\n", stream->stream_id, len);
+
+    ssize_t qlen = estimate_quicly_stream_egress_qlen(stream);
+    if (qlen > streambuf_high_watermarker) {
+        // if a large backlog, just throw the udp packet away.
+        log_debug("stream %ld qlen %ld too large, and drop %ld bytes udp packets.\n",
+                       stream->stream_id, qlen, len);
+    } else {
+        char src_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &iph->saddr, src_ip, sizeof(src_ip));
+        log_debug("udp %s:%d writting to quicly stream %ld, len: %ld.\n",
+              src_ip, ntohs(udph->source),
+              stream->stream_id, len);
+        quicly_streambuf_egress_write(session->stream, buf, len);
+    }
 
     if (req)
        free(req);
@@ -148,7 +164,8 @@ void client_tun_read_cb(EV_P_ ev_io *w, int revents)
              ev_io_stop(EV_DEFAULT, w);
              close(fd);
         } else {
-             log_warn("tun device %d read failed with %d, \"%s\". \n",
+             // too many
+             log_debug("tun device %d read failed with %d, \"%s\". \n",
                            fd, errno, strerror(errno));
              //read failure.
         }

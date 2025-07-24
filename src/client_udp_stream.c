@@ -56,7 +56,7 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
     if (len == 0)
         return;
 
-    log_info("stream %ld received %ld bytes.\n", stream->stream_id, len);
+    log_debug("stream %ld received %ld bytes.\n", stream->stream_id, len);
 
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
@@ -76,7 +76,7 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
         return;
     }
 
-    log_info("stream %ld has %ld bytes available. \n", stream->stream_id, input.len);
+    log_debug("stream %ld has %ld bytes available. \n", stream->stream_id, input.len);
 
     ssize_t bytes_sent = 0, total_bytes_sent = 0;
     struct sockaddr_in dst_addr;
@@ -90,14 +90,14 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
         dst_addr.sin_addr.s_addr = iph->daddr;
 
         if (ip_total_len > input.len) {
-             log_warn("stream %ld only have %ld bytes in its buffer while the ip total length %ld bytes.\n",
+             log_debug("stream %ld only have %ld bytes in its buffer while the ip total length %ld bytes.\n",
                        stream->stream_id, input.len, ip_total_len);
              break;
         }
 
         bytes_sent  = sendto(raw_sock, input.base, ip_total_len, 0, (struct sockaddr *)&dst_addr, sizeof(dst_addr));
 
-        log_info("stream %ld sent over raw sock %d,  %ld bytes of a %ld bytes pkts.\n", stream->stream_id, raw_sock, bytes_sent, ip_total_len);
+        log_debug("stream %ld sent over raw sock %d,  %ld bytes of a %ld bytes pkts.\n", stream->stream_id, raw_sock, bytes_sent, ip_total_len);
 
         if (bytes_sent < 0) {
             log_error("stream id %ld write %ld bytes to raw_sock %d failed w/ errno %d, \"%s\".\n",
@@ -124,7 +124,7 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
         else
             quicly_stream_sync_recvbuf(stream, total_bytes_sent);
 
-        log_info("stream %ld wrote %ld bytes to %s:%d through raw sock %d.\n",
+        log_debug("stream %ld wrote %ld bytes to %s:%d through raw sock %d.\n",
                     stream->stream_id, total_bytes_sent, inet_ntoa(dst_addr.sin_addr),
                     ntohs(dst_addr.sin_port), raw_sock);
     }
@@ -134,7 +134,7 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
             log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
                      stream->stream_id, raw_sock, errno, strerror(errno));
         } else {
-            log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
+            log_warn("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
                      stream->stream_id, raw_sock, errno, strerror(errno));
         }
     }

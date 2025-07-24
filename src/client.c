@@ -36,6 +36,8 @@ struct ev_loop *loop = NULL;
 session_t *ht_quic_to_flow = NULL;
 session_t *ht_tcp_to_quic = NULL;
 
+extern ssize_t streambuf_high_watermarker;
+
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
 
@@ -254,14 +256,22 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         print_session_event(s, "host: client, func: %s, line: %d, event: read_from_tcp.\n", __func__, __LINE__);
     }
 
-    //TODO need a way to detect egress queue length, only call read
-    // if queue_length <= queue_capacity - read buffer size.
+    ssize_t qlen = estimate_quicly_stream_egress_qlen(stream);
+    log_debug("stream: %ld, egress qlen %ld bytes. \n", stream->stream_id, qlen);
+
+    if (qlen > streambuf_high_watermarker) {
+         log_debug("stream %ld sndbuf is full (%ld bytes) and don't read from socket %d.\n", stream->stream_id, qlen, fd);
+         return;
+    }
+
     char buf[SOCK_READ_BUF_SIZE];
     ssize_t total_read_bytes = 0, read_bytes = 0;
 
     while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
         quicly_streambuf_egress_write(stream, buf, read_bytes);
         total_read_bytes += read_bytes;
+        if (total_read_bytes + qlen > streambuf_high_watermarker)
+            break;
     }
 
     if (read_bytes == 0) {
