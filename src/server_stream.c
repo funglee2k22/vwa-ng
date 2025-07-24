@@ -351,7 +351,7 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
         quicly_streambuf_egress_write(stream, buf, read_bytes);
         total_read_bytes += read_bytes;
         //TODO need refactor this part.
-        if (total_read_bytes > streambuf_high_watermarker)
+        if (total_read_bytes + qlen > streambuf_high_watermarker)
             break;
     }
 
