@@ -50,7 +50,7 @@ void server_stream_udp_receive(session_t *session)
         return;
     }
 
-    log_info("stream: %ld, recv buf has %ld bytes available for UDP traffic.\n",
+    log_debug("stream: %ld, recv buf has %ld bytes available for UDP traffic.\n",
                 stream->stream_id, input.len);
 
     int raw_sock = server_udp_raw_fd;
@@ -66,7 +66,8 @@ void server_stream_udp_receive(session_t *session)
         ssize_t ip_total_len = ntohs(iph->tot_len);
 
         if (ip_total_len > input.len) {
-            log_warn("stream %ld only have %ld bytes in its buffer while the ip total length %ld bytes.\n",
+            //too often
+            log_debug("stream %ld only have %ld bytes in its buffer while the ip total length %ld bytes.\n",
                      stream->stream_id, input.len, ip_total_len);
             break;
         }
@@ -97,11 +98,9 @@ void server_stream_udp_receive(session_t *session)
             quicly_streambuf_ingress_shift(stream, total_bytes_sent);
         else
             quicly_stream_sync_recvbuf(stream, total_bytes_sent);
-
-        log_info("stream %ld wrote %ld bytes to %s:%d through raw sock %d.\n",
+        log_debug("stream %ld wrote %ld bytes to %s:%d through raw sock %d.\n",
                     stream->stream_id, total_bytes_sent, inet_ntoa(dest.sin_addr),
                     ntohs(dest.sin_port), raw_sock);
-
     }
 
     if (bytes_sent < 0) {

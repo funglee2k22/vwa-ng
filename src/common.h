@@ -15,6 +15,9 @@
 
 #define SOCK_READ_BUF_SIZE   4096
 
+#define STREAMBUF_HIGH_WARTER_MARKER  8388608
+
+
 int open_tun_dev(const char *devname);
 
 int create_udp_raw_socket(int tun_fd);
@@ -81,3 +84,10 @@ static inline uint64_t get_current_pid()
 }
 
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
+
+
+ssize_t get_quicly_stream_egress_qlen(quicly_stream_t *stream);
+
+ssize_t estimate_quicly_stream_egress_qlen(quicly_stream_t *stream);
+
+

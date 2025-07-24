@@ -123,8 +123,6 @@ session_t *find_session_u2q(session_t **hh, request_t *k)
 {
     session_t *r = NULL;
 
-    dump_request(k);
-
     HASH_FIND(hh_u2q, *hh, k, sizeof(request_t), r);
 
     if (!r) {

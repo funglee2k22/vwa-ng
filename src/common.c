@@ -32,6 +32,9 @@
 #include <picotls/openssl.h>
 
 
+ssize_t  streambuf_high_watermarker = STREAMBUF_HIGH_WARTER_MARKER;
+
+
 ptls_context_t *get_tlsctx()
 {
     static ptls_context_t tlsctx = {.random_bytes = ptls_openssl_random_bytes,
@@ -174,7 +177,7 @@ void print_session_event(session_t *s, const char *fmt, ...)
     snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->req.da.sin_addr), ntohs(s->req.da.sin_port));
     timeval_subtract(diff, tv, &s->start_tm);
 
-    int num_streams = 0; 
+    int num_streams = 0;
     if (s && s->conn)
         num_streams = quicly_num_streams(s->conn);
 
@@ -315,3 +318,47 @@ int create_udp_raw_socket(int tun_fd)
 
     return raw_sock;
 }
+
+
+ssize_t get_quicly_stream_egress_qlen(quicly_stream_t *stream)
+{
+    quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
+    quicly_sendbuf_t *sb = (quicly_sendbuf_t *) & sbuf->egress;
+    long int stream_id = stream->stream_id;
+
+    ssize_t i, total = 0;
+    for (i = 0; i != sb->vecs.size; ++i) {
+        quicly_sendbuf_vec_t *vec = sb->vecs.entries + i;
+        total += vec->len;
+    }
+    total = total - sb->off_in_first_vec;
+    //printf("stream %ld, total: %ld, size: %ld,  off_in_first_vec: %ld\n", stream_id, total, sb->vecs.size, sb->off_in_first_vec);
+    return total;
+}
+
+
+ssize_t estimate_quicly_stream_egress_qlen(quicly_stream_t *stream)
+{
+    quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
+    quicly_sendbuf_t *sb = (quicly_sendbuf_t *) & sbuf->egress;
+    long int stream_id = stream->stream_id;
+
+    if (sb->vecs.size == 0)
+        return 0;
+
+    ssize_t mid = (sb->vecs.size / 2);
+
+    quicly_sendbuf_vec_t *vec = sb->vecs.entries + mid;
+
+    ssize_t total = sb->vecs.size * (vec->len);
+
+    log_debug("stream %ld, estimate total: %ld, vecs.size: %ld, mid_len: %ld, bytes_written: %ld.\n",
+               stream_id, total, sb->vecs.size, vec->len, sb->bytes_written);
+
+    return total;
+}
+
+
+
+
+

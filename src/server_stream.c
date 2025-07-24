@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <quicly/streambuf.h>
 
+extern ssize_t streambuf_high_watermarker;
+
 extern session_t *ht_tcp_to_quic;
 extern session_t *ht_quic_to_flow;
 
@@ -189,7 +191,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     if (len == 0)
         return;
 
-    log_info("stream %ld received %ld bytes.\n", stream->stream_id, len);
+    log_debug("stream %ld received %ld bytes.\n", stream->stream_id, len);
 
     /* read input to receive buffer */
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
@@ -197,8 +199,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
 
     session_t *session = find_session_q2f(&ht_quic_to_flow, stream);
-
-    log_info("find session %p, created for stream %ld, %p \n", session,  stream->stream_id, stream);
+    log_debug("find session %p, created for stream %ld, %p \n", session,  stream->stream_id, stream);
 
     if (!session) { // might be new session.
         session = create_new_session(stream);
@@ -209,7 +210,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
             return;
         }
 
-        log_info("session %p created for stream %ld, %p \n", session, stream->stream_id, stream);
+        log_debug("session %p created for stream %ld, %p \n", session, stream->stream_id, stream);
     }
 
     assert(session != NULL);
@@ -335,14 +336,23 @@ void server_tcp_read_cb(EV_P_ ev_io *w, int revents)
     quicly_stream_t *stream = s->stream;
     assert(stream != NULL);
 
-    //TODO need a way to detect egress queue length, only call read
-    // if queue_length <= queue_capacity - read buffer size.
+    ssize_t qlen = estimate_quicly_stream_egress_qlen(stream);
+    log_debug("stream: %ld, egress qlen %ld bytes. \n", stream->stream_id, qlen);
+
+    if (qlen > streambuf_high_watermarker) {
+         log_debug("stream %ld sndbuf is full (%ld bytes) and don't read from socket %d.\n", stream->stream_id, qlen, fd);
+         return;
+    }
+
     char buf[SOCK_READ_BUF_SIZE];
     ssize_t total_read_bytes = 0, read_bytes = 0;
 
     while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
         quicly_streambuf_egress_write(stream, buf, read_bytes);
         total_read_bytes += read_bytes;
+        //TODO need refactor this part.
+        if (total_read_bytes > streambuf_high_watermarker)
+            break;
     }
 
     if (read_bytes == 0) {
