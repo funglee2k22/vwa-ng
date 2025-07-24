@@ -1,4 +1,5 @@
 #include "client.h"
+#include "client_udp.h"
 #include "client_stream.h"
 #include "common.h"
 #include "session.h"
@@ -20,8 +21,10 @@
 #include <picotls/../../t/util.h>
 
 static int client_quic_socket = -1;
+static int client_udp_tun_fd = -1;
+int client_udp_raw_fd = -1;
 static int client_tcp_socket = -1;
-static quicly_conn_t *conn = NULL;
+quicly_conn_t *conn = NULL;
 static ev_timer client_timeout;
 static quicly_context_t client_ctx;
 static quicly_cid_plaintext_t next_cid;
@@ -30,8 +33,10 @@ static int64_t connect_time = 0;
 static ptls_iovec_t resumption_token;
 
 struct ev_loop *loop = NULL;
-session_t *ht_quic_to_tcp = NULL;
+session_t *ht_quic_to_flow = NULL;
 session_t *ht_tcp_to_quic = NULL;
+
+extern ssize_t streambuf_high_watermarker;
 
 static void client_on_conn_close(quicly_closed_by_remote_t *self, quicly_conn_t *conn, quicly_error_t err,
                                  uint64_t frame_type, const char *reason, size_t reason_len);
@@ -251,14 +256,22 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
         print_session_event(s, "host: client, func: %s, line: %d, event: read_from_tcp.\n", __func__, __LINE__);
     }
 
-    //TODO need a way to detect egress queue length, only call read
-    // if queue_length <= queue_capacity - read buffer size.
+    ssize_t qlen = estimate_quicly_stream_egress_qlen(stream);
+    log_debug("stream: %ld, egress qlen %ld bytes. \n", stream->stream_id, qlen);
+
+    if (qlen > streambuf_high_watermarker) {
+         log_debug("stream %ld sndbuf is full (%ld bytes) and don't read from socket %d.\n", stream->stream_id, qlen, fd);
+         return;
+    }
+
     char buf[SOCK_READ_BUF_SIZE];
     ssize_t total_read_bytes = 0, read_bytes = 0;
 
     while ((read_bytes = read(fd, buf, sizeof(buf))) > 0) {
         quicly_streambuf_egress_write(stream, buf, read_bytes);
         total_read_bytes += read_bytes;
+        if (total_read_bytes + qlen > streambuf_high_watermarker)
+            break;
     }
 
     if (read_bytes == 0) {
@@ -301,18 +314,14 @@ session_t *client_create_session(int fd, quicly_stream_t *stream)
     return session;
 }
 
-static void inline client_send_ctrl_frame(quicly_stream_t *stream, struct sockaddr_in *sa, struct sockaddr_in *da)
+void client_send_meta_data(quicly_stream_t *stream, request_t *req)
 {
-    frame_t ctrl_frame;
-    ctrl_frame.type = 1;
-    memcpy(&(ctrl_frame.s.src), sa, sizeof(struct sockaddr_in));
-    memcpy(&(ctrl_frame.s.dst), da, sizeof(struct sockaddr_in));
+    log_debug("stream %ld send meta data (len %ld)  to server.\n",
+                  stream->stream_id, sizeof(request_t));
 
-    //send clt side session info to server;
-    quicly_streambuf_egress_write(stream, (void *) &ctrl_frame, sizeof(frame_t));
+    quicly_streambuf_egress_write(stream, (void *) req, sizeof(request_t));
 
     return;
-
 }
 
 void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
@@ -348,15 +357,17 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     assert(ret == 0);
 
     session_t *session = client_create_session(fd, stream);
-    memcpy(&(session->sa), (void *)&sa, salen);
-    memcpy(&(session->da), (void *)&da, dalen);
+    memcpy(&(session->req.sa), (void *)&sa, salen);
+    memcpy(&(session->req.da), (void *)&da, dalen);
+    session->req.protocol = IPPROTO_TCP;
 
     add_to_hash_t2q(&ht_tcp_to_quic, session);
-    add_to_hash_q2t(&ht_quic_to_tcp, session);
+    add_to_hash_q2f(&ht_quic_to_flow, session);
 
     gettimeofday(&session->start_tm, NULL);
     print_session_event(session, "func: %s, line: %d, event: session_created.\n", __func__, __LINE__);
-    client_send_ctrl_frame(stream, &sa, &da);
+
+    client_send_meta_data(stream, &(session->req));
 
     //preparing ev watchers
     ev_io *client_tcp_read_watcher = (ev_io *)malloc(sizeof(ev_io));
@@ -494,7 +505,6 @@ void sigpipe_handler(int signo)
     return;
 }
 
-
 int main(int argc, char** argv)
 {
     int port = 4433;
@@ -502,6 +512,7 @@ int main(int argc, char** argv)
     const char *host = "192.168.10.1";
     const char *logfile = NULL;
     const char *local_host = "127.0.0.1";
+    const char *devname = "tun0";
 
     loop = EV_DEFAULT;
 
@@ -520,27 +531,34 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
+    client_udp_tun_fd = open_tun_dev(devname);
+    assert(client_udp_tun_fd > 0);
+
+    client_udp_raw_fd = create_udp_raw_socket(client_udp_tun_fd);
+    assert(client_udp_raw_fd > 0);
+
+    //setting all socket in non-blocking mode.
     set_non_blocking(client_tcp_socket);
     set_non_blocking(client_quic_socket);
+    set_non_blocking(client_udp_tun_fd);
+    set_non_blocking(client_udp_raw_fd);
 
-    ev_io udp_read_watcher, udp_write_watcher;
+    ev_io udp_read_watcher;
     ev_io_init(&udp_read_watcher, &client_quic_read_cb, client_quic_socket, EV_READ);
     ev_io_start(loop, &udp_read_watcher);
-
-#if 0
-    ev_io_init(&udp_write_watcher, &client_quic_write_cb, client_quic_socket, EV_WRITE);
-    ev_io_start(loop, &udp_write_watcher);
-#endif
 
     ev_io tcp_socket_accept_watcher;
     ev_io_init(&tcp_socket_accept_watcher, &client_tcp_accept_cb, client_tcp_socket, EV_READ);
     ev_io_start(loop, &tcp_socket_accept_watcher);
 
-    //ev_init(&client_timeout, &client_timeout_cb);
-    //client_refresh_timeout();
+    ev_io tun_read_watcher;
+    ev_io_init(&tun_read_watcher, client_tun_read_cb, client_udp_tun_fd, EV_READ);
+    ev_io_start(loop, &tun_read_watcher);
+
     ev_timer_init(&client_timeout, &client_timeout_cb, 0.1, 0.0);
     ev_timer_start(EV_DEFAULT, &client_timeout);
 
     ev_run(loop, 0);
 
 }
+

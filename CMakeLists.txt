@@ -5,9 +5,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(extern)
 
-add_executable(new-clt src/uthash.h src/common.h src/common.c src/client.h
-	        src/session.h src/session.c
-                src/client_stream.h src/client_stream.c src/client.c) 
+add_executable(new-clt
+               src/uthash.h
+               src/common.h src/common.c
+               src/client.h src/client.c
+               src/session.h src/session.c
+               src/client_stream.h src/client_stream.c
+               src/client_udp_stream.h src/client_udp_stream.c
+               src/client_udp.h src/client_udp.c)
+
 target_link_libraries(new-clt PRIVATE quicly ev picotls)
 target_compile_definitions(new-clt PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(new-clt PRIVATE
@@ -17,9 +23,14 @@ target_compile_options(new-clt PRIVATE
 )
 
 
-add_executable(new-srv src/uthash.h src/common.h src/common.c src/server.h
-	        src/session.h src/session.c
-                src/server_stream.h src/server_stream.c src/server.c) 
+add_executable(new-srv
+               src/uthash.h
+               src/common.h src/common.c
+               src/session.h src/session.c
+               src/server.h src/server.c
+               src/server_stream.h src/server_stream.c
+               src/server_udp.h src/server_udp.c
+               src/server_udp_stream.h src/server_udp_stream.c)
 target_link_libraries(new-srv PRIVATE quicly ev picotls)
 target_compile_definitions(new-srv PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
 target_compile_options(new-srv PRIVATE
@@ -28,16 +39,9 @@ target_compile_options(new-srv PRIVATE
     -Werror=shift-count-overflow
 )
 
-#----------------
-#tests and small poc 
-#---------------
-add_executable(test-uthash src/uthash.h test/uthash-test/session.h test/uthash-test/test-uthash-session.c ) 
-target_link_libraries(test-uthash PRIVATE quicly ev picotls)
-target_compile_definitions(test-uthash PRIVATE CPEP_VERSION="${PROJECT_VERSION}")
-target_compile_options(test-uthash PRIVATE
-    -Werror=implicit-function-declaration
-    -Werror=incompatible-pointer-types
-    -Werror=shift-count-overflow
-)
+add_subdirectory(src)
 
-add_executable(test-udp-tproxy test/udp-tproxy-test/udp-tproxy-server.c ) 
+#----------------
+#tests and small poc
+#---------------
+add_subdirectory(test)

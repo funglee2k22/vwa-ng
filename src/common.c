@@ -1,14 +1,39 @@
 #include "common.h"
 
+#include <arpa/inet.h>
+#include <ev.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/time.h>
+#include <float.h>
+#include <getopt.h>
+#include <linux/if.h>
+#include <linux/if_tun.h>
 #include <math.h>
+#include <memory.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netdb.h>
-#include <memory.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <quicly.h>
+#include <quicly/defaults.h>
+#include <quicly/streambuf.h>
+#include <picotls/../../t/util.h>
 #include <picotls/openssl.h>
-#include <errno.h>
+
+
+ssize_t  streambuf_high_watermarker = STREAMBUF_HIGH_WARTER_MARKER;
+
 
 ptls_context_t *get_tlsctx()
 {
@@ -148,11 +173,11 @@ void print_session_event(session_t *s, const char *fmt, ...)
     char str_sa[128];
     char str_da[128];
 
-    snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->sa.sin_addr), ntohs(s->sa.sin_port));
-    snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->da.sin_addr), ntohs(s->da.sin_port));
+    snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->req.sa.sin_addr), ntohs(s->req.sa.sin_port));
+    snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->req.da.sin_addr), ntohs(s->req.da.sin_port));
     timeval_subtract(diff, tv, &s->start_tm);
 
-    int num_streams = 0; 
+    int num_streams = 0;
     if (s && s->conn)
         num_streams = quicly_num_streams(s->conn);
 
@@ -237,4 +262,103 @@ int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval 
   /* Return 1 if result is negative. */
   return x->tv_sec < y->tv_sec;
 }
+
+void print_req_info(struct sockaddr_in *src, struct sockaddr_in *dst, ssize_t len)
+{
+
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &src->sin_addr.s_addr, src_ip, sizeof(src_ip));
+    inet_ntop(AF_INET, &dst->sin_addr.s_addr, dst_ip, sizeof(dst_ip));
+
+    log_info("received UDP packet from %s:%u to %s:%u, udp_len: %ld \n",
+                src_ip, ntohs(src->sin_port), dst_ip, ntohs(dst->sin_port), len);
+    return;
+}
+
+int open_tun_dev(const char *devname)
+{
+    struct ifreq ifr;
+    int fd, err;
+    if ((fd = open("/dev/net/tun", O_RDWR)) == -1) {
+        perror("open /dev/net/tun");
+        exit(1);
+    }
+    memset(&ifr, 0, sizeof(ifr));
+    ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+    strncpy(ifr.ifr_name, devname, IFNAMSIZ);
+
+    if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr)) == -1) {
+        perror("ioctl TUNSETIFF");
+        close(fd);
+        exit(1);
+    }
+
+    return fd;
+}
+
+
+int create_udp_raw_socket(int tun_fd)
+{
+    int raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+
+    if (raw_sock < 0) {
+        perror("socket(AF_INET, SOCK_RAW)");
+        close(tun_fd);
+        exit(1);
+    }
+
+    int on = 1;
+    if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) < 0) {
+        perror("setsockopt(IP_HDRINCL)");
+        close(tun_fd);
+        close(raw_sock);
+        exit(1);
+    }
+
+    return raw_sock;
+}
+
+
+ssize_t get_quicly_stream_egress_qlen(quicly_stream_t *stream)
+{
+    quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
+    quicly_sendbuf_t *sb = (quicly_sendbuf_t *) & sbuf->egress;
+    long int stream_id = stream->stream_id;
+
+    ssize_t i, total = 0;
+    for (i = 0; i != sb->vecs.size; ++i) {
+        quicly_sendbuf_vec_t *vec = sb->vecs.entries + i;
+        total += vec->len;
+    }
+    total = total - sb->off_in_first_vec;
+    //printf("stream %ld, total: %ld, size: %ld,  off_in_first_vec: %ld\n", stream_id, total, sb->vecs.size, sb->off_in_first_vec);
+    return total;
+}
+
+
+ssize_t estimate_quicly_stream_egress_qlen(quicly_stream_t *stream)
+{
+    quicly_streambuf_t *sbuf = (quicly_streambuf_t *)stream->data;
+    quicly_sendbuf_t *sb = (quicly_sendbuf_t *) & sbuf->egress;
+    long int stream_id = stream->stream_id;
+
+    if (sb->vecs.size == 0)
+        return 0;
+
+    ssize_t mid = (sb->vecs.size / 2);
+
+    quicly_sendbuf_vec_t *vec = sb->vecs.entries + mid;
+
+    ssize_t total = sb->vecs.size * (vec->len);
+
+    log_debug("stream %ld, estimate total: %ld, vecs.size: %ld, mid_len: %ld, bytes_written: %ld.\n",
+               stream_id, total, sb->vecs.size, vec->len, sb->bytes_written);
+
+    return total;
+}
+
+
+
+
 

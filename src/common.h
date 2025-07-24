@@ -1,12 +1,12 @@
 #pragma once
 
 #include "uthash.h"
-#include "session.h" 
+#include "session.h"
 
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syslog.h> 
+#include <syslog.h>
 #include <quicly.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,15 +15,12 @@
 
 #define SOCK_READ_BUF_SIZE   4096
 
-typedef struct cpep_frame { 
-    int type; 
-    union { 
-       struct { 
-           struct sockaddr_in src;
-           struct sockaddr_in dst;     //original 
-       } s; 
-    }; 
-} frame_t; 
+#define STREAMBUF_HIGH_WARTER_MARKER  8388608
+
+
+int open_tun_dev(const char *devname);
+
+int create_udp_raw_socket(int tun_fd);
 
 ptls_context_t *get_tlsctx();
 
@@ -34,9 +31,6 @@ int set_non_blocking(int sockfd);
 
 void _debug_printf(int priority, const char *function, int line, const char *fmt, ...)
     __attribute__((format(printf, 4, 5)));
-
-void print_session_event(session_t *s, const char *fmt, ...)
-    __attribute__((format(printf, 2, 3)));
 
 void print_stream_event(quicly_stream_t *s, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
@@ -90,3 +84,10 @@ static inline uint64_t get_current_pid()
 }
 
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
+
+
+ssize_t get_quicly_stream_egress_qlen(quicly_stream_t *stream);
+
+ssize_t estimate_quicly_stream_egress_qlen(quicly_stream_t *stream);
+
+

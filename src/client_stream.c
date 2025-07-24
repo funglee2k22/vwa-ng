@@ -1,5 +1,6 @@
-#include "client_stream.h"
 #include "client.h"
+#include "client_stream.h"
+#include "client_udp_stream.h"
 #include "common.h"
 #include <ev.h>
 #include <errno.h>
@@ -14,7 +15,7 @@ static ev_timer report_timer;
 static int runtime_s = 3600;
 
 extern session_t *ht_tcp_to_quic;
-extern session_t *ht_quic_to_tcp;
+extern session_t *ht_quic_to_flow;
 
 
 void format_size(char *dst, double bytes)
@@ -44,7 +45,7 @@ void client_clean_up_init_from_quic(quicly_stream_t *stream, quicly_error_t err)
 {
     log_debug("client clean session initiated from stream: %ld with %li.\n", stream->stream_id, err);
 
-    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream->stream_id);
+    session_t *s = find_session_q2f(&ht_quic_to_flow, stream);
 
     if (!s) {
         terminate_quic_stream(stream, err);
@@ -72,7 +73,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
     if (quicly_streambuf_ingress_receive(stream, off, src, len) != 0)
         return;
 
-    session_t *s = find_session_q2t(&ht_quic_to_tcp, stream_id);
+    session_t *s = find_session_q2f(&ht_quic_to_flow, stream);
     if (!s || !s->tcp_active) {
         log_error("stream %ld received %ld bytes, but remote tcp conn. might be closed.\n", stream_id, len);
         quicly_stream_sync_recvbuf(stream, len);
