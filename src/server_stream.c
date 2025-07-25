@@ -7,6 +7,7 @@
 #include <ev.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <sys/time.h>
 #include <quicly/streambuf.h>
 
 extern ssize_t streambuf_high_watermarker;
@@ -214,6 +215,7 @@ static void server_stream_receive(quicly_stream_t *stream, size_t off, const voi
     }
 
     assert(session != NULL);
+    gettimeofday(&(session->active_tm), NULL);
 
     if (session->req.protocol == IPPROTO_TCP) {
         //note, input already in stream's receive buf.

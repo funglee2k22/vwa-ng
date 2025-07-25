@@ -90,5 +90,5 @@ session_t *find_session_q2f(session_t **hh, quicly_stream_t *stream);
 
 
 void remove_inactive_udp_sessions();
-
+void client_remove_inactive_udp_sessions(void);
 

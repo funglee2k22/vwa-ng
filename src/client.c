@@ -64,6 +64,8 @@ void client_timeout_cb(EV_P_ ev_timer *w, int revents)
         log_warn("quicly conn is close-able, but keep it open\n");
     }
 
+    client_remove_inactive_udp_sessions();
+
     client_refresh_timeout();
 }
 

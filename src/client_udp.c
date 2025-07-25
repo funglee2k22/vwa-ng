@@ -55,6 +55,9 @@ session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream)
     session->conn = stream->conn;
     session->stream_active = true;
 
+    gettimeofday(&(session->start_tm), NULL);
+    gettimeofday(&(session->active_tm), NULL);
+
     memcpy(&(session->req), req, sizeof(request_t));
 
     return session;

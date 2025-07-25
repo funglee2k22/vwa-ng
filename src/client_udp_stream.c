@@ -1,6 +1,8 @@
 #include "client_udp_stream.h"
 #include "client.h"
 #include "common.h"
+#include "session.h"
+
 #include <ev.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -18,7 +20,12 @@ extern int client_udp_raw_fd;
 static void udp_client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
     log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
-    //FIXME need a new function to handle udp stream disconnection.
+    //do nothing is fine, let timer_callback clean inactive udp sessions.
+    session_t *session = find_session_q2f(&ht_quic_to_flow, stream);
+    if (session) {
+        session->stream_active = false;
+    }
+    return;
 }
 
 ssize_t write_to_udp_raw_socket(int raw_sock, char *buf, ssize_t len)
@@ -68,6 +75,8 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
         log_warn("not session info associated with stream %ld.\n", stream->stream_id);
         return;
     }
+
+    gettimeofday(&(session->active_tm), NULL);
 
     int raw_sock = session->raw_udp_fd;
     ptls_iovec_t input = quicly_streambuf_ingress_get(stream);

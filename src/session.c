@@ -265,30 +265,45 @@ void delete_session_init_from_quic(session_t *s, quicly_error_t err)
 }
 
 
+void clean_udp_session(session_t *s, quicly_error_t err)
+{
+     close_quic_stream_in_session(s,  err);
+     delete_session_q2f(&ht_quic_to_flow, s);
+     delete_session_u2q(&ht_udp_to_quic, s);
+     s->stream = NULL;
+     return;
+}
+
+void client_remove_inactive_udp_sessions(void)
+{
+     struct timeval now;
+     session_t *s, *temp;
+
+     HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
+         if (s->stream_active == false) {
+             log_info("udp session [stream: %ld] marked inactive . \n", s->stream_id);
+             //print_session_event(s, "udp ssesion is terminating due to inactive.\n");
+             delete_session_q2f(&ht_quic_to_flow, s);
+             delete_session_u2q(&ht_udp_to_quic, s);
+             free(s);
+         }
+     }
+}
 
 void remove_inactive_udp_sessions(void)
 {
-     struct timeval now, diff;
+     struct timeval now;
      gettimeofday(&now, NULL);
 
      session_t *s, *temp;
      HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
-         int ret = timeval_subtract(&diff, &now, &(s->active_tm));
-         if (ret == 1) {
-             log_error("udp session [stream: %ld] has negative elaspsed time. \n", s->stream_id);
-             continue;
-         }
-
-         if (diff.tv_sec > udp_inactive_thresh_secs) {
-             log_info("udp session [stream: %ld] inactive for %ld secs. \n", s->stream_id, diff.tv_sec);
+         long int elapsed_sec = now.tv_sec - s->active_tm.tv_sec;
+         if (elapsed_sec > udp_inactive_thresh_secs) {
+             log_info("udp session [stream: %ld] inactive for %ld secs. \n", s->stream_id, elapsed_sec);
              //print_session_event(s, "udp ssesion is terminating due to inactive.\n");
-             close_quic_stream_in_session(s,  QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
-             delete_session_q2f(&ht_quic_to_flow, s);
-             delete_session_u2q(&ht_udp_to_quic, s);
-             s->stream = NULL;
+             clean_udp_session(s,  QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
              free(s);
+             printf("ok here.\n");
          }
      }
-
-
 }
