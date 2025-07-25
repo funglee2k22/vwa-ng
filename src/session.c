@@ -3,8 +3,10 @@
 #include "common.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
-extern session_t *ht_tcp_to_quic, *ht_quic_to_flow;
+extern session_t *ht_tcp_to_quic, *ht_udp_to_quic, *ht_quic_to_flow;
+const int udp_inactive_thresh_secs = 60;
 
 void dump_request(request_t *r)
 {
@@ -26,6 +28,7 @@ void add_to_hash_t2q(session_t **hh, session_t *s)
      } else {
         HASH_REPLACE(hh_t2q, *hh, fd, sizeof(fd), s, t);
      }
+
      return;
 }
 
@@ -253,7 +256,6 @@ void delete_session_init_from_quic(session_t *s, quicly_error_t err)
                    err);
 
      close_quic_stream_in_session(s, err);
-
      close_tcp_conn(s);
 
      delete_session_from_t2q(&ht_tcp_to_quic, s);
@@ -264,3 +266,29 @@ void delete_session_init_from_quic(session_t *s, quicly_error_t err)
 
 
 
+void remove_inactive_udp_sessions(void)
+{
+     struct timeval now, diff;
+     gettimeofday(&now, NULL);
+
+     session_t *s, *temp;
+     HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
+         int ret = timeval_subtract(&diff, &now, &(s->active_tm));
+         if (ret == 1) {
+             log_error("udp session [stream: %ld] has negative elaspsed time. \n", s->stream_id);
+             continue;
+         }
+
+         if (diff.tv_sec > udp_inactive_thresh_secs) {
+             log_info("udp session [stream: %ld] inactive for %ld secs. \n", s->stream_id, diff.tv_sec);
+             //print_session_event(s, "udp ssesion is terminating due to inactive.\n");
+             close_quic_stream_in_session(s,  QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
+             delete_session_q2f(&ht_quic_to_flow, s);
+             delete_session_u2q(&ht_udp_to_quic, s);
+             s->stream = NULL;
+             free(s);
+         }
+     }
+
+
+}

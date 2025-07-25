@@ -20,8 +20,19 @@ typedef struct request {
     u_int8_t protocol;       // protocol IPPROTO_UDP or IPPROTO_TCP
 } request_t;
 
+typedef struct _st_stream_key {
+    quicly_conn_t *conn;
+    long int stream_id;
+} stream_key_t;
+
+typedef struct _stats {
+    ssize_t dropped_udp_pkts;
+    ssize_t dropped_udp_bytes;
+} session_stats_t;
+
 typedef struct session {
     struct timeval start_tm;
+    struct timeval active_tm;    //used for UDP session cleanup
     bool first_read_quic;
     bool first_read_tcp;
     long int stream_id;      // on both client and server, stream_id is the key
@@ -35,9 +46,13 @@ typedef struct session {
         bool ctrl_frame_received;
         bool ctrl_frame_sent;
     };
+
+    session_stats_t stats;
+
     request_t req;
     ev_io *tcp_read_watcher;
     ev_io *tcp_write_watcher;
+
     UT_hash_handle hh_t2q;    //uthash requires different handle for each hashmap
     UT_hash_handle hh_u2q;    // use UDP five tuples to find QUIC Stream
     UT_hash_handle hh_q2f;    // use quicly stream to find tcp and/or udp for given stream
@@ -74,7 +89,6 @@ void add_to_hash_q2f(session_t **hh, session_t *s);
 session_t *find_session_q2f(session_t **hh, quicly_stream_t *stream);
 
 
-
-
+void remove_inactive_udp_sessions();
 
 

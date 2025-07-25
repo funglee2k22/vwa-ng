@@ -33,7 +33,6 @@ session_t *ht_tcp_to_quic = NULL;
 session_t *ht_udp_to_quic = NULL;
 session_t *ht_quic_to_flow = NULL;  //both udp and tcp session are in this hashtab, and quicly_stream_t * is hash key.
 
-
 static int udp_listen(struct addrinfo *addr)
 {
     for (const struct addrinfo *rp = addr; rp != NULL; rp = rp->ai_next) {
@@ -115,6 +114,8 @@ void server_send_pending()
 static void server_timeout_cb(EV_P_ ev_timer *w, int revents)
 {
     server_send_pending();
+
+    remove_inactive_udp_sessions();
 }
 
 static inline void server_handle_packet(quicly_decoded_packet_t *packet, struct sockaddr_storage *sa, socklen_t salen)

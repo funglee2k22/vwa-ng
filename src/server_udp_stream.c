@@ -11,7 +11,7 @@
 #include <sys/socket.h>
 #include <quicly.h>
 #include <quicly/streambuf.h>
-
+#include <sys/time.h>
 
 extern session_t *ht_tcp_to_quic;
 extern session_t *ht_udp_to_quic;
@@ -28,6 +28,9 @@ session_t *create_udp_session(quicly_stream_t *stream, request_t *req)
     ns->stream = stream;
     ns->conn = stream->conn;
     ns->stream_id = stream->stream_id;
+
+    gettimeofday(&ns->start_tm, NULL);
+    gettimeofday(&ns->active_tm, NULL);
 
     //note, for udp server side still use tun dev and raw sockets.
     ns->fd = server_udp_raw_fd;
@@ -107,7 +110,7 @@ void server_stream_udp_receive(session_t *session)
         if (errno != EAGAIN) {
           log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
                      stream->stream_id, raw_sock, errno, strerror(errno));
-        } else { 
+        } else {
           log_error("stream id %ld wrote to raw_sock %d failed w/ errno %d, \"%s\".\n",
                      stream->stream_id, raw_sock, errno, strerror(errno));
        }
