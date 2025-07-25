@@ -33,7 +33,7 @@ session_t *create_udp_session(quicly_stream_t *stream, request_t *req)
     gettimeofday(&ns->active_tm, NULL);
 
     //note, for udp server side still use tun dev and raw sockets.
-    ns->fd = server_udp_raw_fd;
+    ns->fd = ns->raw_udp_fd = server_udp_raw_fd;
 
     add_to_hash_u2q(&ht_udp_to_quic, ns);  //key is req
     add_to_hash_q2f(&ht_quic_to_flow, ns); //key is the stream
@@ -56,7 +56,7 @@ void server_stream_udp_receive(session_t *session)
     log_debug("stream: %ld, recv buf has %ld bytes available for UDP traffic.\n",
                 stream->stream_id, input.len);
 
-    int raw_sock = server_udp_raw_fd;
+    int raw_sock = session->raw_udp_fd;
     ssize_t bytes_sent = 0, total_bytes_sent = 0;
     struct sockaddr_in dest;
     bzero(&dest, sizeof(dest));
