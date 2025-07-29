@@ -49,10 +49,14 @@ session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream)
     assert(session != NULL);
 
     gettimeofday(&session->start_tm, NULL);
+
     session->stream = stream;
     session->stream_id = stream->stream_id;
     session->conn = stream->conn;
     session->stream_active = true;
+
+    gettimeofday(&(session->start_tm), NULL);
+    gettimeofday(&(session->active_tm), NULL);
 
     memcpy(&(session->req), req, sizeof(request_t));
 
@@ -105,6 +109,8 @@ void process_udp_packet(int fd, char *buf, ssize_t len)
 
     assert(session != NULL);
     assert(session->stream != NULL);
+    gettimeofday(&session->active_tm, NULL);
+
     //FIXME in the next version, we may use emit to send the UDP packets.
     // the following line would write the whole packet including IP header
     // into stream
@@ -116,6 +122,9 @@ void process_udp_packet(int fd, char *buf, ssize_t len)
         // if a large backlog, just throw the udp packet away.
         log_debug("stream %ld qlen %ld too large, and drop %ld bytes udp packets.\n",
                        stream->stream_id, qlen, len);
+        session->stats.dropped_udp_pkts += 1;
+        session->stats.dropped_udp_bytes += len;
+
     } else {
         char src_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &iph->saddr, src_ip, sizeof(src_ip));

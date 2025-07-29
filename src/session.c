@@ -3,8 +3,13 @@
 #include "common.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
-extern session_t *ht_tcp_to_quic, *ht_quic_to_flow;
+extern session_t *ht_tcp_to_quic, \
+                 *ht_udp_to_quic, \
+                 *ht_quic_to_flow;
+
+const int udp_inactive_thresh_secs = 60;
 
 void dump_request(request_t *r)
 {
@@ -26,6 +31,7 @@ void add_to_hash_t2q(session_t **hh, session_t *s)
      } else {
         HASH_REPLACE(hh_t2q, *hh, fd, sizeof(fd), s, t);
      }
+
      return;
 }
 
@@ -253,7 +259,6 @@ void delete_session_init_from_quic(session_t *s, quicly_error_t err)
                    err);
 
      close_quic_stream_in_session(s, err);
-
      close_tcp_conn(s);
 
      delete_session_from_t2q(&ht_tcp_to_quic, s);
@@ -263,4 +268,45 @@ void delete_session_init_from_quic(session_t *s, quicly_error_t err)
 }
 
 
+void clean_udp_session(session_t *s, quicly_error_t err)
+{
+     close_quic_stream_in_session(s,  err);
+     delete_session_q2f(&ht_quic_to_flow, s);
+     delete_session_u2q(&ht_udp_to_quic, s);
+     s->stream = NULL;
+     return;
+}
 
+void client_remove_inactive_udp_sessions(void)
+{
+     struct timeval now;
+     session_t *s, *temp;
+
+     HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
+         if (s->stream_active == false) {
+             log_info("udp session [stream: %ld] marked inactive . \n", s->stream_id);
+             //print_session_event(s, "udp ssesion is terminating due to inactive.\n");
+             delete_session_q2f(&ht_quic_to_flow, s);
+             delete_session_u2q(&ht_udp_to_quic, s);
+             free(s);
+         }
+     }
+}
+
+void remove_inactive_udp_sessions(void)
+{
+     struct timeval now;
+     gettimeofday(&now, NULL);
+
+     session_t *s, *temp;
+     HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
+         long int elapsed_sec = now.tv_sec - s->active_tm.tv_sec;
+         if (elapsed_sec > udp_inactive_thresh_secs) {
+             log_info("udp session [stream: %ld] inactive for %ld secs. \n", s->stream_id, elapsed_sec);
+             //print_session_event(s, "udp ssesion is terminating due to inactive.\n");
+             clean_udp_session(s,  QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
+             free(s);
+             printf("ok here.\n");
+         }
+     }
+}
