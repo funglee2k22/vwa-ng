@@ -68,27 +68,30 @@ void server_process_udp_packet(char *buf, ssize_t len)
     request_t *req = get_request(buf, &src, &dst);
     session_t *session = find_session_u2q(&ht_udp_to_quic, req);
 
-    char src_ip[INET_ADDRSTRLEN];
+    char src_ip[INET_ADDRSTRLEN], dst_ip[INET_ADDRSTRLEN];
+    unsigned short sport = ntohs(udph->source), dport = ntohs(udph->dest);
     inet_ntop(AF_INET, &iph->saddr, src_ip, sizeof(src_ip));
+    inet_ntop(AF_INET, &iph->daddr, dst_ip, sizeof(dst_ip));
 
     if (!session) {
-        log_error("received %ld bytes from %s:%d, but could not find stream to write.\n",
-               len, src_ip, ntohs(udph->source));
+        log_warn("received %ld bytes %s:%d -> %s:%d, but could not find stream to write.\n",
+                  len, src_ip, sport, dst_ip, dport);
         free(req);
         return;
     }
 
     quicly_stream_t *stream = session->stream;
-
     ssize_t qlen = estimate_quicly_stream_egress_qlen(stream);
 
     if (qlen > streambuf_high_watermarker) {
         // if a large backlog, just throw the udp packet away.
         log_debug("stream %ld qlen %ld too large, and drop %ld bytes udp packets.\n",
                        session->stream_id, qlen, len);
+        session->stats.dropped_udp_pkts += 1;
+        session->stats.dropped_udp_bytes += len;
     } else {
-        log_debug("udp %s:%d writting to quicly stream %ld, len: %ld.\n",
-              src_ip, ntohs(udph->source),
+        log_debug("udp %s:%d -> %s:%d writting to quicly stream %ld, len: %ld.\n",
+              src_ip, sport, dst_ip, dport, \
               session->stream->stream_id, len);
         quicly_streambuf_egress_write(session->stream, buf, len);
     }

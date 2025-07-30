@@ -14,6 +14,7 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netdb.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,43 +155,6 @@ void print_trace (void)
             printf ("%s\n", strings[i]);
     }
     free (strings);
-}
-
-
-void print_session_event(session_t *s, const char *fmt, ...)
-{
-    char buf[1024];
-    va_list args;
-
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-
-    struct timeval *tv = malloc(sizeof(struct timeval));
-    struct timeval *diff = malloc(sizeof(struct timeval));
-    gettimeofday(tv, NULL);
-
-    char str_sa[128];
-    char str_da[128];
-
-    snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->req.sa.sin_addr), ntohs(s->req.sa.sin_port));
-    snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->req.da.sin_addr), ntohs(s->req.da.sin_port));
-    timeval_subtract(diff, tv, &s->start_tm);
-
-    int num_streams = 0;
-    if (s && s->conn)
-        num_streams = quicly_num_streams(s->conn);
-
-    fprintf(stdout, "Time: %ld.%06lu, conn: %s -> %s, start_tm: %ld.%06lu, elapsed_tm: %ld.%06lu, fd: %d, stream: %ld, totol_stream: %d, %s",
-             tv->tv_sec, tv->tv_usec, str_sa, str_da,
-              s->start_tm.tv_sec, s->start_tm.tv_usec,
-              diff->tv_sec, diff->tv_usec,
-              s->fd, s->stream_id, num_streams, buf);
-    fflush(stdout);
-    free(tv);
-    free(diff);
-
-    return;
 }
 
 void print_stream_event(quicly_stream_t *s, const char *fmt, ...)

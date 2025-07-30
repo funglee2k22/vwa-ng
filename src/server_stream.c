@@ -64,6 +64,9 @@ session_t *create_tcp_session(quicly_stream_t *stream, request_t *req)
     assert(fd > 0);
     ns->fd = fd;
 
+    gettimeofday(&(ns->start_tm), NULL);
+    gettimeofday(&(ns->active_tm), NULL);
+
     ns->stream_active = true;
     ns->tcp_active = true;
 
@@ -132,7 +135,7 @@ static void server_stream_tcp_receive(session_t *s)
              if (input.len > 0) {
                  if (ev_is_active(s->tcp_write_watcher) != true) {
                      ev_io_start(loop, s->tcp_write_watcher);
-                     log_info("stream %ld has %ld bytes in recv buf left, and start ev_writer\n",
+                     log_debug("stream %ld has %ld bytes in recv buf left, and start ev_writer\n",
                                  stream->stream_id, (ssize_t) input.len);
                  }
              }
@@ -174,9 +177,11 @@ session_t *create_new_session(quicly_stream_t *stream)
         ns = create_udp_session(stream, req);
     }
 
-    input.len -= sizeof(request_t);
+    assert(ns != NULL);
+    print_session_event(ns, "state: created.\n");
 
-    log_info("stream %ld, consumed %ld bytes and  %ld bytes in receive buf. \n",
+    input.len -= sizeof(request_t);
+    log_debug("stream %ld, consumed %ld bytes and  %ld bytes in receive buf. \n",
                   stream->stream_id, sizeof(request_t), input.len);
 
     if (input.len > 0)
@@ -251,7 +256,7 @@ int create_tcp_connection(struct sockaddr *sa)
         return -1;
     }
 
-    printf("created tcp %d to connect %s:%d.\n", fd,
+    log_debug("created tcp %d to connect %s:%d.\n", fd,
                    inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
                     ntohs(((struct sockaddr_in *)sa)->sin_port));
 

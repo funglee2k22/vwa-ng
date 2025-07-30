@@ -1,8 +1,10 @@
 #include "session.h"
 #include "uthash.h"
 #include "common.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <sys/time.h>
 
 extern session_t *ht_tcp_to_quic, \
@@ -107,21 +109,6 @@ void add_to_hash_u2q(session_t **hh, session_t *s)
         HASH_REPLACE(hh_u2q, *hh, req, sizeof(request_t), s, r);
     }
 
-    request_t key;
-    memcpy(&key, &(s->req), sizeof(request_t));
-    r = NULL;
-
-    HASH_FIND(hh_u2q, *hh, &key, sizeof(request_t), r);
-    if (!r) {
-        log_error("here.\n");
-    }
-
-    r = find_session_u2q(hh, &key);
-
-    if (!r) {
-        log_error("here.\n");
-    }
-
     return;
 }
 
@@ -130,10 +117,6 @@ session_t *find_session_u2q(session_t **hh, request_t *k)
     session_t *r = NULL;
 
     HASH_FIND(hh_u2q, *hh, k, sizeof(request_t), r);
-
-    if (!r) {
-       log_error("could not find the session\n");
-    }
 
     return r;
 }
@@ -285,7 +268,6 @@ void client_remove_inactive_udp_sessions(void)
      HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
          if (s->stream_active == false) {
              log_info("udp session [stream: %ld] marked inactive . \n", s->stream_id);
-             //print_session_event(s, "udp ssesion is terminating due to inactive.\n");
              delete_session_q2f(&ht_quic_to_flow, s);
              delete_session_u2q(&ht_udp_to_quic, s);
              free(s);
@@ -302,11 +284,53 @@ void remove_inactive_udp_sessions(void)
      HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
          long int elapsed_sec = now.tv_sec - s->active_tm.tv_sec;
          if (elapsed_sec > udp_inactive_thresh_secs) {
-             log_info("udp session [stream: %ld] inactive for %ld secs. \n", s->stream_id, elapsed_sec);
-             //print_session_event(s, "udp ssesion is terminating due to inactive.\n");
+             print_session_event(s, "dropped_pkts: %ld, dropped_bytes: %ld, state: terminating, reason: inactive.\n",
+                                     s->stats.dropped_udp_pkts, s->stats.dropped_udp_bytes);
              clean_udp_session(s,  QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
              free(s);
-             printf("ok here.\n");
          }
      }
 }
+
+void print_session_event(session_t *s, const char *fmt, ...)
+{
+    char buf[1024];
+    va_list args;
+
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    struct timeval *tv = malloc(sizeof(struct timeval));
+    struct timeval *diff = malloc(sizeof(struct timeval));
+    gettimeofday(tv, NULL);
+
+    char str_sa[128];
+    char str_da[128];
+
+    snprintf(str_sa, sizeof(str_sa), "%s:%d", inet_ntoa(s->req.sa.sin_addr), ntohs(s->req.sa.sin_port));
+    snprintf(str_da, sizeof(str_da), "%s:%d", inet_ntoa(s->req.da.sin_addr), ntohs(s->req.da.sin_port));
+    timeval_subtract(diff, tv, &s->start_tm);
+
+    int num_streams = 0;
+    if (s && s->conn)
+        num_streams = quicly_num_streams(s->conn);
+
+    struct tm *tm_info;
+    char time_string[128];
+    tm_info = localtime(&tv->tv_sec);
+    strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", tm_info);
+
+    fprintf(stdout, "Time: %s, conn: %s -> %s, proto: %d, start_tm: %ld, elapsed_tm: %ld.%06lu, fd: %d, stream: %ld, %s",
+              time_string, \
+              str_sa, str_da, s->req.protocol, \
+              s->start_tm.tv_sec, \
+              diff->tv_sec, diff->tv_usec,   \
+              s->fd, s->stream_id, buf);
+    fflush(stdout);
+    free(tv);
+    free(diff);
+
+    return;
+}
+
