@@ -90,11 +90,16 @@ void server_process_udp_packet(char *buf, ssize_t len)
         session->stats.dropped_udp_pkts += 1;
         session->stats.dropped_udp_bytes += len;
     } else {
+
         log_debug("udp %s:%d -> %s:%d writting to quicly stream %ld, len: %ld.\n",
               src_ip, sport, dst_ip, dport, \
               session->stream->stream_id, len);
+        session->stats.sent_udp_pkts += 1;
+        session->stats.sent_udp_bytes += len;
         quicly_streambuf_egress_write(session->stream, buf, len);
     }
+    session->stats.total_udp_pkts += 1;
+    session->stats.total_udp_bytes += len;
 
     free(req);
 

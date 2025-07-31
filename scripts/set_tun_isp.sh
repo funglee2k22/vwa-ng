@@ -43,6 +43,7 @@ setup() {
     tc qdisc add dev ${ISP_NIC} clsact
     tc filter add dev ${ISP_NIC} ingress prio 1 protocol ip u32 \
         match ip protocol 17 0xff \
+        match ip dst 192.168.222.0/24 \
 	    action mirred egress redirect dev $IFACE
 
 #match ip dst 192.168.222.0/24 \

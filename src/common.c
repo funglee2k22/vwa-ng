@@ -248,6 +248,7 @@ int open_tun_dev(const char *devname)
         perror("open /dev/net/tun");
         exit(1);
     }
+
     memset(&ifr, 0, sizeof(ifr));
     ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
     strncpy(ifr.ifr_name, devname, IFNAMSIZ);

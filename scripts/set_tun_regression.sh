@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # --- Configuration ---
-IFACE="tun0"
+IFACE="tun1"
 INGRESS_NIC="enp1s3"
 
 # --- Helper Functions ---

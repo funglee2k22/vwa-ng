@@ -235,7 +235,6 @@ int srv_setup_quic_listener(const char* address, const char *port, const char *k
     return server_socket;
 }
 
-
 int main(int argc, char** argv)
 {
     int port = 4433;
@@ -276,6 +275,16 @@ int main(int argc, char** argv)
 
     ev_timer_init(&server_timeout, &server_timeout_cb, 2., 0.0);
     ev_timer_start(EV_DEFAULT, &server_timeout);
+
+#if 1
+    int server_udp_test_tun_fd = open_tun_dev("tun1");
+    assert(server_udp_test_tun_fd > 0);
+    set_non_blocking(server_udp_test_tun_fd);
+
+    ev_io udp_tun_test_reader;
+    ev_io_init(&udp_tun_test_reader, &server_tun_read_cb, server_udp_test_tun_fd, EV_READ);
+    ev_io_start(loop, &udp_tun_test_reader);
+#endif
 
     ev_run(loop, 0);
 

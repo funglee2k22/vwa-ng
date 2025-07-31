@@ -28,6 +28,10 @@ typedef struct _st_stream_key {
 typedef struct _stats {
     ssize_t dropped_udp_pkts;
     ssize_t dropped_udp_bytes;
+    ssize_t sent_udp_pkts;
+    ssize_t sent_udp_bytes;
+    ssize_t total_udp_pkts;
+    ssize_t total_udp_bytes;
 } session_stats_t;
 
 typedef struct session {

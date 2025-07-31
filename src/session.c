@@ -284,8 +284,10 @@ void remove_inactive_udp_sessions(void)
      HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
          long int elapsed_sec = now.tv_sec - s->active_tm.tv_sec;
          if (elapsed_sec > udp_inactive_thresh_secs) {
-             print_session_event(s, "dropped_pkts: %ld, dropped_bytes: %ld, state: terminating, reason: inactive.\n",
-                                     s->stats.dropped_udp_pkts, s->stats.dropped_udp_bytes);
+             print_session_event(s, "dropped_pkts: %ld, dropped_bytes: %ld, sent_pkts: %ld, sent_bytes: %ld, total_pkts: %ld, total_bytes: %ld, state: terminating, reason: inactive.\n",
+                                     s->stats.dropped_udp_pkts, s->stats.dropped_udp_bytes, \
+                                     s->stats.sent_udp_pkts, s->stats.sent_udp_bytes,\
+                                     s->stats.total_udp_pkts, s->stats.total_udp_bytes);
              clean_udp_session(s,  QUICLY_ERROR_FROM_APPLICATION_ERROR_CODE(0));
              free(s);
          }
