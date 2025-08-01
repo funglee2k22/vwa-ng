@@ -82,7 +82,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
 
     if (s && !s->first_read_quic) {
         s->first_read_quic = true;
-        print_session_event(s, "func: %s, line: %d, event: first_read_quic.\n", __func__, __LINE__);
+        print_session_event(s, "event: first_read_quic.\n");
     }
 
 
@@ -123,7 +123,7 @@ static void client_stream_receive(quicly_stream_t *stream, size_t off, const voi
              if (input.len > 0) {
                  if (ev_is_active(s->tcp_write_watcher) != true) {
                      ev_io_start(loop, s->tcp_write_watcher);
-                     log_info("stream %ld has %ld bytes in recv buf left, and start ev_writer\n",
+                     log_debug("stream %ld has %ld bytes in recv buf left, and start ev_writer\n",
                                  stream->stream_id, (ssize_t) input.len);
                  }
              }

@@ -43,7 +43,6 @@ setup() {
     tc qdisc add dev ${CPE_NIC} clsact
     tc filter add dev ${CPE_NIC} ingress prio 1 protocol ip u32 \
         match ip protocol 17 0xff \
-        match ip dport 443 0xffff \
 	    action mirred egress mirror dev $IFACE
 
     echo "Any UDP packet sent to $IFACE will be captured."

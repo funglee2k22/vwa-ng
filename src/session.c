@@ -267,7 +267,10 @@ void client_remove_inactive_udp_sessions(void)
 
      HASH_ITER(hh_u2q, ht_udp_to_quic, s, temp) {
          if (s->stream_active == false) {
-             log_info("udp session [stream: %ld] marked inactive . \n", s->stream_id);
+            print_session_event(s, "dropped_pkts: %ld, dropped_bytes: %ld, sent_pkts: %ld, sent_bytes: %ld, total_pkts: %ld, total_bytes: %ld, state: terminating, reason: inactive.\n",
+                                s->stats.dropped_udp_pkts, s->stats.dropped_udp_bytes, \
+                                s->stats.sent_udp_pkts, s->stats.sent_udp_bytes,\
+                                s->stats.total_udp_pkts, s->stats.total_udp_bytes);
              delete_session_q2f(&ht_quic_to_flow, s);
              delete_session_u2q(&ht_udp_to_quic, s);
              free(s);

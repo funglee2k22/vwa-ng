@@ -54,6 +54,7 @@ session_t *client_create_udp_session(request_t *req, quicly_stream_t *stream)
     session->stream_id = stream->stream_id;
     session->conn = stream->conn;
     session->stream_active = true;
+    session->fd = session->raw_udp_fd = client_udp_raw_fd;
 
     gettimeofday(&(session->start_tm), NULL);
     gettimeofday(&(session->active_tm), NULL);
@@ -92,12 +93,18 @@ void process_udp_packet(int fd, char *buf, ssize_t len)
 
     session_t *session = find_session_u2q(&ht_udp_to_quic, req);
 
+    char src_ip[INET_ADDRSTRLEN], dst_ip[INET_ADDRSTRLEN];
+    unsigned short sport = ntohs(udph->source), dport = ntohs(udph->dest);
+    inet_ntop(AF_INET, &iph->saddr, src_ip, sizeof(src_ip));
+    inet_ntop(AF_INET, &iph->daddr, dst_ip, sizeof(dst_ip));
+
     if (!session) {
         quicly_stream_t *stream = NULL;
         int ret = quicly_open_stream(conn, &stream, 0);
         assert(ret == 0);
         stream->callbacks = &udp_client_stream_callbacks;
         session = client_create_udp_session(req, stream);
+
         assert(session != NULL);
 
         client_send_meta_data(stream, req);
@@ -105,6 +112,9 @@ void process_udp_packet(int fd, char *buf, ssize_t len)
 
         add_to_hash_u2q(&ht_udp_to_quic, session);
         add_to_hash_q2f(&ht_quic_to_flow, session);
+
+        print_session_event(session, "state: created.\n");
+
     }
 
     assert(session != NULL);
@@ -118,21 +128,27 @@ void process_udp_packet(int fd, char *buf, ssize_t len)
     log_debug("writting to quicly streambuf %ld, len: %ld.\n", stream->stream_id, len);
 
     ssize_t qlen = estimate_quicly_stream_egress_qlen(stream);
+
     if (qlen > streambuf_high_watermarker) {
         // if a large backlog, just throw the udp packet away.
         log_debug("stream %ld qlen %ld too large, and drop %ld bytes udp packets.\n",
                        stream->stream_id, qlen, len);
         session->stats.dropped_udp_pkts += 1;
         session->stats.dropped_udp_bytes += len;
-
     } else {
         char src_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &iph->saddr, src_ip, sizeof(src_ip));
-        log_debug("udp %s:%d writting to quicly stream %ld, len: %ld.\n",
-              src_ip, ntohs(udph->source),
+        log_debug("udp %s:%d -> %s:%d writting to quicly stream %ld, len: %ld.\n",
+              src_ip, sport,
+              dst_ip, dport,
               stream->stream_id, len);
         quicly_streambuf_egress_write(session->stream, buf, len);
+        session->stats.sent_udp_pkts += 1;
+        session->stats.dropped_udp_bytes += len;
     }
+
+    session->stats.total_udp_pkts += 1;
+    session->stats.total_udp_bytes += len;
 
     if (req)
        free(req);

@@ -19,11 +19,12 @@ extern int client_udp_raw_fd;
 
 static void udp_client_stream_send_stop(quicly_stream_t *stream, quicly_error_t err)
 {
-    log_info("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
+    log_debug("stream %ld received STOP_SENDING: %li\n", stream->stream_id, err);
     //do nothing is fine, let timer_callback clean inactive udp sessions.
     session_t *session = find_session_q2f(&ht_quic_to_flow, stream);
     if (session) {
         session->stream_active = false;
+        print_session_event(session, "state: quic_stream_received_stop_sending.\n");
     }
     return;
 }
@@ -153,13 +154,12 @@ void udp_client_stream_receive(quicly_stream_t *stream, size_t off, const void *
 
 static void udp_client_stream_receive_reset(quicly_stream_t *stream, quicly_error_t err)
 {
-    log_info("stream %ld, received RESET_STREAM: %li\n", stream->stream_id, err);
-    //FIXME do we need to terminate session here ?
+    log_debug("stream %ld, received RESET_STREAM: %li\n", stream->stream_id, err);
 }
 
 static void udp_client_stream_on_destroy(quicly_stream_t *stream, quicly_error_t err)
 {
-    log_info("stream %ld is destroyed w/ error %ld.\n", stream->stream_id, err);
+    log_debug("stream %ld is destroyed with error %ld.\n", stream->stream_id, err);
     quicly_streambuf_destroy(stream, err);
     return;
 }

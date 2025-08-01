@@ -243,7 +243,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
     int fd = w->fd;
     session_t *s = find_session_t2q(&ht_tcp_to_quic, fd);
     if (!s) {
-        log_info("could not find session for tcp %d. \n", fd);
+        log_debug("could not find session for tcp %d. \n", fd);
         ev_io_stop(loop, w);
         free(w);
         close(fd);
@@ -278,7 +278,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     if (read_bytes == 0) {
          // tcp connection has been closed.
-        log_info("fd: %d remote peer closed.\n", fd);
+        log_debug("fd: %d remote peer closed.\n", fd);
         quicly_streambuf_egress_shutdown(stream);
         s->tcp_active = false;
         delete_session_init_from_tcp(s, 0);
@@ -287,7 +287,7 @@ void client_tcp_read_cb(EV_P_ ev_io *w, int revents)
 
     if(read_bytes < 0) {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            log_warn("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
+            log_debug("fd: %d, read() failed with %d, \"%s\".\n", fd, errno, strerror(errno));
             quicly_streambuf_egress_shutdown(stream);
             s->tcp_active = false;
             delete_session_init_from_tcp(s, errno);
@@ -351,7 +351,7 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     char str1[1024], str2[1024];
     snprintf(str1, sizeof(str1), "%s:%d", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port));
     snprintf(str2, sizeof(str2), "%s:%d", inet_ntoa(da.sin_addr), ntohs(da.sin_port));
-    log_info("conn: %s -> %s, fd: %d, event: accept.\n", str1, str2, fd);
+    log_debug("conn: %s -> %s, fd: %d, event: accept.\n", str1, str2, fd);
 
     //open quicly stream;
     quicly_stream_t *stream = NULL;
@@ -367,7 +367,8 @@ void client_tcp_accept_cb(EV_P_ ev_io *w, int revents)
     add_to_hash_q2f(&ht_quic_to_flow, session);
 
     gettimeofday(&session->start_tm, NULL);
-    print_session_event(session, "func: %s, line: %d, event: session_created.\n", __func__, __LINE__);
+    gettimeofday(&session->active_tm, NULL);
+    print_session_event(session, "event: created.\n");
 
     client_send_meta_data(stream, &(session->req));
 
